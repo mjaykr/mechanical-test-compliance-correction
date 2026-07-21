@@ -89,8 +89,24 @@ mechtest-gui
 Choose the raw data file and output folder, select tension or compression, and
 enter a justified target modulus plus an elastic fitting interval. The GUI saves
 the same audit CSV, corrected curve, JSON summary, and figures as the command-
-line tool. If the input file has unambiguous strain and stress columns, leave
-the optional column fields empty; otherwise enter the exact header names.
+line tool. It proposes column mappings automatically and lets you select a
+different pair when the machine export contains additional channels.
+
+The interactive workflow is arranged in four tabs:
+
+1. **Import** previews up to 100 rows, identifies numeric columns, proposes a
+   strain/stress or extension/load mapping, and lets you correct that mapping.
+2. **Test setup** defines tension or compression, input units and signs, or the
+   gauge length and initial area needed to convert load–extension data.
+3. **Correct & review** embeds the raw and corrected curves. Drag horizontally
+   over the raw graph to select the elastic fitting interval, then inspect the
+   apparent and recovered moduli, fit R-squared, toe strain, and compliance.
+4. **Export** saves the complete audit outputs and an `analysis_settings.json`
+   file. Settings can also be saved and reloaded independently.
+
+The graph selection is an analysis aid: use a visibly linear, pre-yield region
+after initial platen seating or grip take-up. The software still treats the
+target modulus as an external assumption, not as a measured result.
 
 ### Command line
 

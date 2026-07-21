@@ -3,7 +3,12 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from mechtest_correction.io import normalize_units, read_curve
+from mechtest_correction.io import (
+    normalize_units,
+    numeric_column_names,
+    read_curve,
+    read_data_table,
+)
 
 
 def test_reads_text_with_non_numeric_header(tmp_path):
@@ -33,3 +38,21 @@ def test_unit_normalization():
     )
     normalized = normalize_units(frame, strain_unit="percent", stress_unit="GPa")
     assert normalized.iloc[-1].tolist() == pytest.approx([0.01, 200.0])
+
+
+def test_data_table_preserves_named_columns(tmp_path):
+    path = tmp_path / "machine.csv"
+    pd.DataFrame(
+        {"time": [0, 1, 2], "extension": [0.0, 0.1, 0.2], "load": [0, 5, 9]}
+    ).to_csv(path, index=False)
+    table = read_data_table(path)
+    assert table.columns.tolist() == ["time", "extension", "load"]
+    assert numeric_column_names(table) == ["time", "extension", "load"]
+
+
+def test_data_table_detects_delimiter_and_headerless_data(tmp_path):
+    path = tmp_path / "machine.csv"
+    path.write_text("0;0\n0.01;10\n0.02;20\n", encoding="utf-8")
+    table = read_data_table(path)
+    assert table.columns.tolist() == ["column_1", "column_2"]
+    assert table.shape == (3, 2)

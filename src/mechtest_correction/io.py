@@ -9,6 +9,61 @@ import pandas as pd
 _NUMBER = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$")
 
 
+def read_data_table(path: str | Path, *, sheet_name: str | int = 0) -> pd.DataFrame:
+    """Read an input file while preserving columns for GUI mapping and preview."""
+
+    source = Path(path)
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    suffix = source.suffix.lower()
+    if suffix in {".xlsx", ".xls"}:
+        frame = pd.read_excel(source, sheet_name=sheet_name)
+    elif suffix in {".csv", ".tsv", ".txt", ".dat"}:
+        lines = [
+            line.strip()
+            for line in source.read_text(encoding="utf-8-sig").splitlines()
+            if line.strip()
+        ]
+        if not lines:
+            raise ValueError(f"No data found in {source}")
+        first_fields = [field for field in re.split(r"[\s,;]+", lines[0]) if field]
+        header = (
+            None if first_fields and all(_NUMBER.match(x) for x in first_fields) else 0
+        )
+        if suffix in {".csv", ".tsv"}:
+            frame = pd.read_csv(
+                source, sep=None, engine="python", header=header, on_bad_lines="skip"
+            )
+        else:
+            frame = pd.read_csv(
+                source,
+                sep=r"[\s,;]+",
+                engine="python",
+                header=header,
+                on_bad_lines="skip",
+            )
+        if header is None:
+            frame.columns = [f"column_{index + 1}" for index in range(frame.shape[1])]
+    else:
+        raise ValueError(
+            f"Unsupported input type {suffix!r}; use CSV, TSV, TXT, DAT, XLSX, or XLS"
+        )
+    frame.columns = [str(column).strip() for column in frame.columns]
+    if frame.empty or frame.shape[1] < 2:
+        raise ValueError("The input must contain at least two columns")
+    return frame
+
+
+def numeric_column_names(frame: pd.DataFrame, *, minimum_values: int = 3) -> list[str]:
+    """Return columns containing enough numeric values for test-data mapping."""
+
+    return [
+        str(column)
+        for column in frame.columns
+        if pd.to_numeric(frame[column], errors="coerce").notna().sum() >= minimum_values
+    ]
+
+
 def _first_two_numeric_columns(
     frame: pd.DataFrame,
 ) -> tuple[pd.Series, pd.Series]:

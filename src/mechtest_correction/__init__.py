@@ -4,4 +4,4 @@ from .correction import correct_curve
 from .models import CorrectionConfig, CorrectionResult
 
 __all__ = ["CorrectionConfig", "CorrectionResult", "correct_curve"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"
