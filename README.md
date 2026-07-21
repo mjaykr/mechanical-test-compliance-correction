@@ -68,8 +68,9 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 This creates a local `.venv` environment, installs the GUI, and creates a
 **Mechanical Test Compliance Correction** shortcut with an application icon on
-your Windows Desktop. Start the application at any later time using that shortcut
-or with:
+your Windows Desktop. The installer prints the precise shortcut location, which
+also supports a OneDrive-redirected desktop. Start the application at any later
+time using that shortcut or with:
 
 ```powershell
 .\start-gui.ps1

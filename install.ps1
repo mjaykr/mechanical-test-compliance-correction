@@ -63,11 +63,32 @@ function New-ApplicationIcon {
     }
 }
 
-function New-DesktopShortcut {
-    param([Parameter(Mandatory)] [string]$ProjectRoot)
+function Get-UserDesktopDirectory {
+    # User Shell Folders preserves Desktop redirection such as OneDrive\Desktop.
+    $desktop = $null
+    try {
+        $shellFolders = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" -Name Desktop -ErrorAction Stop
+        $desktop = [Environment]::ExpandEnvironmentVariables([string]$shellFolders.Desktop)
+    }
+    catch {
+        $desktop = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+    }
 
-    $desktop = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
-    $shortcutPath = Join-Path $desktop $shortcutName
+    if ([string]::IsNullOrWhiteSpace($desktop)) {
+        throw "Windows did not provide a Desktop folder for the current user."
+    }
+
+    New-Item -ItemType Directory -Path $desktop -Force | Out-Null
+    return (Resolve-Path -LiteralPath $desktop).Path
+}
+
+function New-ShortcutAtDesktop {
+    param(
+        [Parameter(Mandatory)] [string]$ProjectRoot,
+        [Parameter(Mandatory)] [string]$DesktopDirectory
+    )
+
+    $shortcutPath = Join-Path $DesktopDirectory $shortcutName
     $iconPath = Join-Path $ProjectRoot "assets\mechtest.ico"
     New-ApplicationIcon -Path $iconPath
     $shell = New-Object -ComObject WScript.Shell
@@ -78,6 +99,32 @@ function New-DesktopShortcut {
     $shortcut.IconLocation = "$iconPath,0"
     $shortcut.Description = "Launch Mechanical Test Compliance Correction"
     $shortcut.Save()
+    if (-not (Test-Path -LiteralPath $shortcutPath)) {
+        throw "The Desktop shortcut could not be created at: $shortcutPath"
+    }
+    return $shortcutPath
+}
+
+function New-DesktopShortcuts {
+    param([Parameter(Mandatory)] [string]$ProjectRoot)
+
+    $shortcutPaths = @(
+        New-ShortcutAtDesktop -ProjectRoot $ProjectRoot -DesktopDirectory (Get-UserDesktopDirectory)
+    )
+
+    # An elevated installation may be run under a different account. In that
+    # case a shared shortcut is visible on the signed-in user's desktop too.
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+    $isAdministrator = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if ($isAdministrator) {
+        $commonDesktop = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonDesktopDirectory)
+        if ($commonDesktop -and $commonDesktop -ne (Get-UserDesktopDirectory)) {
+            $shortcutPaths += New-ShortcutAtDesktop -ProjectRoot $ProjectRoot -DesktopDirectory $commonDesktop
+        }
+    }
+
+    return $shortcutPaths
 }
 
 function Get-PythonCommand {
@@ -108,12 +155,14 @@ $installTarget = if ($Dev) { "${projectRoot}[dev]" } else { $projectRoot }
 Write-Host "Installing Mechanical Test Compliance Correction..."
 & $venvPython -m pip install --editable $installTarget
 
-New-DesktopShortcut -ProjectRoot $projectRoot
+$shortcutPaths = New-DesktopShortcuts -ProjectRoot $projectRoot
 
 Write-Host ""
 Write-Host "Installation completed."
 Write-Host "To start the graphical interface later, run: .\start-gui.ps1"
-Write-Host "A Desktop shortcut was created: $shortcutName"
+foreach ($shortcutPath in $shortcutPaths) {
+    Write-Host "Desktop shortcut created: $shortcutPath"
+}
 
 if ($Launch) {
     & (Join-Path $venvDirectory "Scripts\mechtest-gui.exe")
