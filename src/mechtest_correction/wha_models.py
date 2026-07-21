@@ -85,6 +85,44 @@ class MicromechanicalConfig:
                 raise ValueError(f"{label} must be positive")
 
 
+@dataclass(frozen=True)
+class AdvancedWHAConfig:
+    """Explicit assumptions for advanced WHA sensitivity views."""
+
+    tungsten_poisson_ratio: float = 0.28
+    matrix_poisson_ratio: float = 0.31
+    ww_contiguity: float = 0.45
+    porosity_fraction: float = 0.0
+    interface_strength_mpa: float = 150.0
+    contiguity_coefficient_mpa: float = 100.0
+    porosity_strength_exponent: float = 1.5
+    tungsten_density_multiplier: float = 1.30
+    matrix_density_multiplier: float = 0.50
+
+    def validate(self) -> None:
+        for label, value in {
+            "W Poisson ratio": self.tungsten_poisson_ratio,
+            "matrix Poisson ratio": self.matrix_poisson_ratio,
+        }.items():
+            if not 0.0 < value < 0.5:
+                raise ValueError(f"{label} must be between 0 and 0.5")
+        for label, value in {
+            "W-W contiguity": self.ww_contiguity,
+            "porosity": self.porosity_fraction,
+        }.items():
+            if not 0.0 <= value < 1.0:
+                raise ValueError(f"{label} must be between 0 and 1")
+        for label, value in {
+            "interface strength": self.interface_strength_mpa,
+            "contiguity coefficient": self.contiguity_coefficient_mpa,
+            "porosity exponent": self.porosity_strength_exponent,
+            "W density multiplier": self.tungsten_density_multiplier,
+            "matrix density multiplier": self.matrix_density_multiplier,
+        }.items():
+            if value < 0.0:
+                raise ValueError(f"{label} cannot be negative")
+
+
 def analyze_hall_petch(
     result: CorrectionResult, config: MicrostructureConfig
 ) -> tuple[pd.DataFrame, dict[str, object]]:
@@ -374,6 +412,196 @@ def analyze_micromechanics(
             "These are one-dimensional bilinear load-sharing bounds, not an "
             "interface-resolved or crystal-plasticity solution. Phase parameters "
             "must be independently justified before physical interpretation."
+        ),
+    }
+    return data, summary
+
+
+def _isotropic_bulk_shear(modulus_mpa: float, poisson: float) -> tuple[float, float]:
+    bulk = modulus_mpa / (3.0 * (1.0 - 2.0 * poisson))
+    shear = modulus_mpa / (2.0 * (1.0 + poisson))
+    return bulk, shear
+
+
+def _mori_tanaka_modulus(
+    micromechanical: MicromechanicalConfig, advanced: AdvancedWHAConfig
+) -> float:
+    """Isotropic spherical-inclusion Mori-Tanaka elastic modulus (MPa)."""
+
+    ew = micromechanical.tungsten_modulus_gpa * 1000.0
+    em = micromechanical.matrix_modulus_gpa * 1000.0
+    kw, gw = _isotropic_bulk_shear(ew, advanced.tungsten_poisson_ratio)
+    km, gm = _isotropic_bulk_shear(em, advanced.matrix_poisson_ratio)
+    fraction = micromechanical.tungsten_volume_fraction
+    bulk = km + fraction * (kw - km) / (
+        1.0 + (1.0 - fraction) * (kw - km) / (km + 4.0 * gm / 3.0)
+    )
+    zeta = gm * (9.0 * km + 8.0 * gm) / (6.0 * (km + 2.0 * gm))
+    shear = gm + fraction * (gw - gm) / (
+        1.0 + (1.0 - fraction) * (gw - gm) / (gm + zeta)
+    )
+    return 9.0 * bulk * shear / (3.0 * bulk + shear)
+
+
+def analyze_advanced_wha(
+    result: CorrectionResult,
+    micromechanical: MicromechanicalConfig,
+    advanced: AdvancedWHAConfig,
+) -> tuple[dict[str, pd.DataFrame], dict[str, object]]:
+    """Build requested WHA homogenization/sensitivity views from stated inputs."""
+
+    micromechanical.validate()
+    advanced.validate()
+    if result.micromechanical is None or result.micromechanical.empty:
+        result.micromechanical, _ = analyze_micromechanics(result, micromechanical)
+    base = result.micromechanical.copy()
+    fraction = micromechanical.tungsten_volume_fraction
+    matrix_fraction = 1.0 - fraction
+    mt_modulus = _mori_tanaka_modulus(micromechanical, advanced)
+    elastic_limit = min(
+        micromechanical.tungsten_yield_mpa / mt_modulus,
+        micromechanical.matrix_yield_mpa / mt_modulus,
+    )
+    base["Mori_Tanaka_elastic_stress_MPa"] = np.where(
+        base["engineering_strain"] <= elastic_limit,
+        mt_modulus * base["engineering_strain"],
+        np.nan,
+    )
+    macro = base["Voigt_stress_MPa"].to_numpy(dtype=float)
+    w_stress = base["W_phase_iso_strain_stress_MPa"].to_numpy(dtype=float)
+    m_stress = base["matrix_phase_iso_strain_stress_MPa"].to_numpy(dtype=float)
+    load_partition = pd.DataFrame(
+        {
+            "engineering_strain": base["engineering_strain"],
+            "W_phase_stress_MPa": w_stress,
+            "matrix_phase_stress_MPa": m_stress,
+            "W_load_share_fraction": fraction * w_stress / np.maximum(macro, 1.0e-12),
+            "matrix_load_share_fraction": matrix_fraction
+            * m_stress
+            / np.maximum(macro, 1.0e-12),
+        }
+    )
+    interface_factor = 4.0 * fraction * matrix_fraction
+    interface = pd.DataFrame(
+        {
+            "interface_strength_input_MPa": np.linspace(
+                0.0, 2.0 * advanced.interface_strength_mpa, 160
+            ),
+        }
+    )
+    interface["load_transfer_increment_MPa"] = (
+        interface_factor * interface["interface_strength_input_MPa"]
+    )
+    contiguity = pd.DataFrame({"W_W_contiguity": np.linspace(0.0, 1.0, 160)})
+    contiguity["empirical_strength_correction_MPa"] = -(
+        advanced.contiguity_coefficient_mpa * contiguity["W_W_contiguity"]
+    )
+    porosity_factor = (
+        1.0 - advanced.porosity_fraction
+    ) ** advanced.porosity_strength_exponent
+    porosity = pd.DataFrame(
+        {
+            "engineering_strain": base["engineering_strain"],
+            "Hill_dense_stress_MPa": base["Hill_stress_MPa"],
+            "porosity_corrected_Hill_stress_MPa": porosity_factor
+            * base["Hill_stress_MPa"],
+        }
+    )
+    phase_flow = base[
+        [
+            "engineering_strain",
+            "W_phase_iso_strain_stress_MPa",
+            "matrix_phase_iso_strain_stress_MPa",
+        ]
+    ].copy()
+    if result.dislocation_density is None or result.dislocation_density.empty:
+        density = pd.DataFrame()
+    else:
+        density = result.dislocation_density
+    two_phase_density = pd.DataFrame(
+        {
+            "true_plastic_strain": density.get(
+                "true_plastic_strain", pd.Series(dtype=float)
+            ),
+            "effective_apparent_density_m-2": density.get(
+                "apparent_dislocation_density_m-2", pd.Series(dtype=float)
+            ),
+        }
+    )
+    if not two_phase_density.empty:
+        two_phase_density["W_phase_scenario_density_m-2"] = (
+            advanced.tungsten_density_multiplier
+            * two_phase_density["effective_apparent_density_m-2"]
+        )
+        two_phase_density["matrix_phase_scenario_density_m-2"] = (
+            advanced.matrix_density_multiplier
+            * two_phase_density["effective_apparent_density_m-2"]
+        )
+    data = {
+        "rule_mixtures": base[
+            [
+                "engineering_strain",
+                "measured_engineering_stress_MPa",
+                "Voigt_stress_MPa",
+                "Reuss_stress_MPa",
+                "Hill_stress_MPa",
+            ]
+        ].copy(),
+        "iso_responses": base[
+            [
+                "engineering_strain",
+                "W_phase_iso_strain_stress_MPa",
+                "matrix_phase_iso_strain_stress_MPa",
+                "Voigt_stress_MPa",
+                "Reuss_stress_MPa",
+            ]
+        ].copy(),
+        "mori_tanaka": base[
+            [
+                "engineering_strain",
+                "measured_engineering_stress_MPa",
+                "Mori_Tanaka_elastic_stress_MPa",
+            ]
+        ].copy(),
+        "load_partition": load_partition,
+        "interface": interface,
+        "contiguity": contiguity,
+        "porosity": porosity,
+        "phase_flow": phase_flow,
+        "two_phase_dislocation": two_phase_density,
+    }
+    summary: dict[str, object] = {
+        "status": "ok",
+        "Mori_Tanaka_elastic_modulus_GPa": mt_modulus / 1000.0,
+        "Mori_Tanaka_elastic_strain_limit": elastic_limit,
+        "Voigt_elastic_modulus_GPa": (
+            fraction * micromechanical.tungsten_modulus_gpa
+            + matrix_fraction * micromechanical.matrix_modulus_gpa
+        ),
+        "Reuss_elastic_modulus_GPa": 1.0
+        / (
+            fraction / micromechanical.tungsten_modulus_gpa
+            + matrix_fraction / micromechanical.matrix_modulus_gpa
+        ),
+        "current_interface_load_transfer_increment_MPa": (
+            interface_factor * advanced.interface_strength_mpa
+        ),
+        "current_W_W_contiguity_correction_MPa": -(
+            advanced.contiguity_coefficient_mpa * advanced.ww_contiguity
+        ),
+        "porosity_strength_factor": porosity_factor,
+        "references": [
+            "https://doi.org/10.1016/j.msea.2013.11.007",
+            "https://doi.org/10.1016/j.msea.2010.08.071",
+            "https://doi.org/10.1179/pom.1979.22.4.175",
+        ],
+        "micromechanical_inputs": asdict(micromechanical),
+        "advanced_inputs": asdict(advanced),
+        "caveat": (
+            "Mori-Tanaka is a linear-elastic spherical-inclusion estimate. Interface, "
+            "contiguity, porosity, and two-phase density views are transparent "
+            "parameter sensitivities, not independently calibrated WHA failure or "
+            "phase-resolved dislocation models."
         ),
     }
     return data, summary

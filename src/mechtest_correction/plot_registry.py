@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -11,6 +12,7 @@ import pandas as pd
 from .analysis import flow_fit_data_frame
 from .models import CorrectionResult
 from .plotting import (
+    draw_advanced_wha_view,
     draw_constitutive_assessment,
     draw_dislocation_density,
     draw_dislocation_stress_fit,
@@ -96,6 +98,10 @@ def _micromechanical_data(result: CorrectionResult) -> pd.DataFrame:
         if result.micromechanical is None
         else result.micromechanical.copy()
     )
+
+
+def _advanced_data(result: CorrectionResult, view: str) -> pd.DataFrame:
+    return (result.advanced_wha or {}).get(view, pd.DataFrame()).copy()
 
 
 PLOT_SPECS = (
@@ -208,6 +214,96 @@ PLOT_SPECS = (
         _micromechanical_data,
         r"Engineering strain, $\varepsilon_{\mathrm{eng}}$ (\%)",
         r"Phase stress, $\sigma$ (MPa)",
+    ),
+    PlotSpec(
+        "advanced_wha.rule_mixtures",
+        "advanced_wha",
+        "Rule-of-mixtures bounds",
+        "rule_mixtures_ieee",
+        partial(draw_advanced_wha_view, view="rule_mixtures"),
+        partial(_advanced_data, view="rule_mixtures"),
+        r"Engineering strain, $\varepsilon_{\mathrm{eng}}$ (\%)",
+        r"Engineering stress (MPa)",
+    ),
+    PlotSpec(
+        "advanced_wha.iso_responses",
+        "advanced_wha",
+        "Iso-strain / iso-stress response",
+        "iso_responses_ieee",
+        partial(draw_advanced_wha_view, view="iso_responses"),
+        partial(_advanced_data, view="iso_responses"),
+        r"Engineering strain, $\varepsilon_{\mathrm{eng}}$ (\%)",
+        r"Stress (MPa)",
+    ),
+    PlotSpec(
+        "advanced_wha.mori_tanaka",
+        "advanced_wha",
+        "Mori-Tanaka / Eshelby",
+        "mori_tanaka_ieee",
+        partial(draw_advanced_wha_view, view="mori_tanaka"),
+        partial(_advanced_data, view="mori_tanaka"),
+        r"Engineering strain, $\varepsilon_{\mathrm{eng}}$ (\%)",
+        r"Engineering stress (MPa)",
+    ),
+    PlotSpec(
+        "advanced_wha.load_partition",
+        "advanced_wha",
+        "Phase load partition",
+        "phase_load_partition_ieee",
+        partial(draw_advanced_wha_view, view="load_partition"),
+        partial(_advanced_data, view="load_partition"),
+        r"Engineering strain, $\varepsilon_{\mathrm{eng}}$ (\%)",
+        "Load-share fraction",
+    ),
+    PlotSpec(
+        "advanced_wha.interface",
+        "advanced_wha",
+        "Interface-strength contribution",
+        "interface_strength_ieee",
+        partial(draw_advanced_wha_view, view="interface"),
+        partial(_advanced_data, view="interface"),
+        "Interface-strength input (MPa)",
+        "Load-transfer increment (MPa)",
+    ),
+    PlotSpec(
+        "advanced_wha.contiguity",
+        "advanced_wha",
+        "W-W contiguity correction",
+        "ww_contiguity_ieee",
+        partial(draw_advanced_wha_view, view="contiguity"),
+        partial(_advanced_data, view="contiguity"),
+        "W-W contiguity",
+        "Empirical strength correction (MPa)",
+    ),
+    PlotSpec(
+        "advanced_wha.porosity",
+        "advanced_wha",
+        "Porosity correction",
+        "porosity_correction_ieee",
+        partial(draw_advanced_wha_view, view="porosity"),
+        partial(_advanced_data, view="porosity"),
+        r"Engineering strain, $\varepsilon_{\mathrm{eng}}$ (\%)",
+        r"Engineering stress (MPa)",
+    ),
+    PlotSpec(
+        "advanced_wha.phase_flow",
+        "advanced_wha",
+        "Separate BCC-W / FCC-matrix flows",
+        "phase_flow_ieee",
+        partial(draw_advanced_wha_view, view="phase_flow"),
+        partial(_advanced_data, view="phase_flow"),
+        r"Engineering strain, $\varepsilon_{\mathrm{eng}}$ (\%)",
+        "Phase stress (MPa)",
+    ),
+    PlotSpec(
+        "advanced_wha.two_phase_dislocation",
+        "advanced_wha",
+        "Two-phase dislocation evolution",
+        "two_phase_dislocation_ieee",
+        partial(draw_advanced_wha_view, view="two_phase_dislocation"),
+        partial(_advanced_data, view="two_phase_dislocation"),
+        r"True plastic strain, $\varepsilon_p$ (\%)",
+        r"Density, $\rho$ ($\mathrm{m}^{-2}$)",
     ),
 )
 

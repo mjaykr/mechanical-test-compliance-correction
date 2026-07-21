@@ -192,6 +192,18 @@ def write_outputs(result, output_dir: Path, *, input_file: Path) -> dict[str, ob
                 if not isinstance(value, (dict, list))
             ]
         ).to_csv(output_dir / f"{stem}_summary.csv", index=False)
+    for view, data in (result.advanced_wha or {}).items():
+        if not data.empty:
+            data.to_csv(output_dir / f"advanced_wha_{view}_data.csv", index=False)
+    advanced_summary = result.summary.get("advanced_wha_analysis", {})
+    if advanced_summary:
+        pd.DataFrame(
+            [
+                {"metric": key, "value": value}
+                for key, value in advanced_summary.items()
+                if not isinstance(value, (dict, list))
+            ]
+        ).to_csv(output_dir / "advanced_wha_summary.csv", index=False)
     summary = dict(result.summary)
     summary["input_file"] = str(input_file.resolve())
     summary["correction_equation"] = (

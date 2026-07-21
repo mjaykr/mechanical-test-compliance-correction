@@ -45,10 +45,11 @@ load-frame compliance test.
 - Mode-specific tensile and compression property analysis.
 - Engineering-to-true conversion using mode-appropriate equations.
 - Volumetric work integration.
-- Stable registry for 11 independently exportable scientific plots.
+- Stable registry for 20 independently exportable scientific plots.
 - Two-phase Hall-Petch projection with explicit W and matrix contributions.
 - Effective Taylor dislocation density and Kocks-Mecking density evolution.
 - WHA Voigt-Reuss-Hill load-sharing bounds with separate phase properties.
+- Advanced WHA homogenization and sensitivity views in one selectable panel.
 - Corrected CSV, property/model/audit CSVs, JSON summary, and Matplotlib figures.
 - Synthetic tests and GitHub Actions continuous integration.
 
@@ -97,7 +98,7 @@ the same audit CSV, corrected curve, JSON summary, and figures as the command-
 line tool. It proposes column mappings automatically and lets you select a
 different pair when the machine export contains additional channels.
 
-The interactive workflow is arranged in ten tabs:
+The interactive workflow is arranged in eleven tabs:
 
 1. **Import** previews up to 100 rows, identifies numeric columns, proposes a
    strain/stress or extension/load mapping, and lets you correct that mapping.
@@ -118,7 +119,13 @@ The interactive workflow is arranged in ten tabs:
 9. **WHA two-phase model** compares the measured response with bilinear
    Voigt, Reuss, and Hill load-sharing estimates using separate BCC W and FCC
    matrix properties.
-10. **Export** saves the complete audit outputs and an `analysis_settings.json`
+10. **Advanced WHA models** is one dropdown-driven panel for rule-of-mixtures
+    bounds; iso-strain and iso-stress response; Mori-Tanaka/Eshelby elasticity;
+    phase load partition; interface strength, W-W contiguity, and porosity
+    sensitivities; separate BCC-W/FCC-matrix flow laws; and two-phase
+    dislocation-density scenarios. Every selected view has its own data and
+    IEEE export buttons.
+11. **Export** saves the complete audit outputs and an `analysis_settings.json`
    file. Settings can also be saved and reloaded independently.
 
 The graph selection is an analysis aid: use a visibly linear, pre-yield region
@@ -244,6 +251,20 @@ more advanced two-phase WHA formulations are described by
 [Lu, Gao, and Ke](https://doi.org/10.1016/j.msea.2013.11.007) and recent
 [W/matrix interface modelling](https://doi.org/10.1016/j.ijplas.2024.104156).
 
+## Advanced WHA homogenization and sensitivities
+
+The advanced panel keeps the requested WHA extensions together in one dropdown,
+so its plot and exported CSV always describe one model view at a time. The
+Mori-Tanaka response is a linear-elastic, isotropic, spherical-inclusion
+estimate. The interface, W-W contiguity, porosity, and phase-density views are
+explicit parameter sensitivities—not fitted phase-resolved measurements. This
+keeps their assumptions inspectable and prevents a macroscopic curve from being
+overinterpreted as a calibrated microstructural solution. The chosen structure
+is consistent with published WHA analyses that identify matrix/interface,
+contiguity, and porosity as key response variables
+([WHA microstructure study](https://doi.org/10.1016/j.msea.2010.08.071);
+[porosity study](https://doi.org/10.1179/pom.1979.22.4.175)).
+
 ## Plot-data and IEEE export
 
 Every analysis panel now uses a stable plot registry. Select any individual
@@ -297,6 +318,8 @@ Each run creates:
   apparent density, Kocks-Mecking prediction, parameters, and caveats.
 - `micromechanical_data.csv` and `micromechanical_summary.csv`: phase responses,
   load-sharing bounds, effective moduli, and RMSE.
+- `advanced_wha_*_data.csv` and `advanced_wha_summary.csv`: all selectable
+  advanced-WHA model data and the stated sensitivity assumptions.
 - `correction_audit.csv`: original rows, normalized data, removed compliance,
   toe correction, inclusion status, and monotonic adjustment.
 - `summary.json`: assumptions, fitted values, proof stress, terminal values,

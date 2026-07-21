@@ -8,9 +8,11 @@ from mechtest_correction.cli import write_outputs
 from mechtest_correction.plot_registry import PLOT_SPECS, plot_data
 from mechtest_correction.publication import export_ieee_plot, panel_data
 from mechtest_correction.wha_models import (
+    AdvancedWHAConfig,
     DislocationConfig,
     MicromechanicalConfig,
     MicrostructureConfig,
+    analyze_advanced_wha,
     analyze_dislocation_density,
     analyze_hall_petch,
     analyze_micromechanics,
@@ -40,6 +42,10 @@ def wha_result(synthetic_curve):
     result.summary["hall_petch_analysis"] = hp
     result.summary["dislocation_density_analysis"] = density
     result.summary["micromechanical_analysis"] = micromechanical
+    result.advanced_wha, advanced = analyze_advanced_wha(
+        result, MicromechanicalConfig(), AdvancedWHAConfig()
+    )
+    result.summary["advanced_wha_analysis"] = advanced
     return result
 
 
@@ -73,11 +79,47 @@ def test_micromechanical_bounds_and_moduli_are_ordered(wha_result):
     assert (data["Reuss_stress_MPa"] <= data["Voigt_stress_MPa"] + 1.0e-9).all()
 
 
+def test_advanced_wha_homogenization_and_sensitivities(wha_result):
+    data = wha_result.advanced_wha
+    summary = wha_result.summary["advanced_wha_analysis"]
+    assert set(data) == {
+        "rule_mixtures",
+        "iso_responses",
+        "mori_tanaka",
+        "load_partition",
+        "interface",
+        "contiguity",
+        "porosity",
+        "phase_flow",
+        "two_phase_dislocation",
+    }
+    assert (
+        summary["Reuss_elastic_modulus_GPa"]
+        < summary["Mori_Tanaka_elastic_modulus_GPa"]
+    )
+    assert (
+        summary["Mori_Tanaka_elastic_modulus_GPa"]
+        < summary["Voigt_elastic_modulus_GPa"]
+    )
+    shares = data["load_partition"]
+    nonzero_shares = shares.loc[shares["W_phase_stress_MPa"] > 0.0]
+    assert np.allclose(
+        nonzero_shares["W_load_share_fraction"]
+        + nonzero_shares["matrix_load_share_fraction"],
+        1.0,
+    )
+    porosity = data["porosity"]
+    assert (
+        porosity["porosity_corrected_Hill_stress_MPa"]
+        <= porosity["Hill_dense_stress_MPa"]
+    ).all()
+
+
 def test_registry_exposes_every_plot_and_new_panel_data(wha_result):
-    assert len(PLOT_SPECS) == 11
+    assert len(PLOT_SPECS) == 20
     for spec in PLOT_SPECS:
         assert not plot_data(wha_result, spec.plot_id).empty
-    for panel in ("microstructure", "dislocation", "micromechanical"):
+    for panel in ("microstructure", "dislocation", "micromechanical", "advanced_wha"):
         assert not panel_data(wha_result, panel).empty
 
 
@@ -109,5 +151,8 @@ def test_complete_export_includes_wha_analysis_artifacts(tmp_path, wha_result):
         "dislocation_density.pdf",
         "wha_two_phase.png",
         "wha_two_phase.pdf",
+        "advanced_wha_summary.csv",
+        "advanced_wha_mori_tanaka_data.csv",
+        "advanced_wha_two_phase_dislocation_data.csv",
     }
     assert expected <= {path.name for path in output.iterdir()}

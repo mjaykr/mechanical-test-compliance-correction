@@ -22,7 +22,9 @@ from .io import numeric_column_names, read_data_table
 from .models import CorrectionConfig, CorrectionResult
 from .plot_registry import get_plot_spec, plot_data, plots_for_panel
 from .plotting import (
+    ADVANCED_WHA_VIEW_LABELS,
     configure_plot_style,
+    draw_advanced_wha_view,
     draw_constitutive_assessment,
     draw_dislocation_panel,
     draw_hall_petch_panel,
@@ -32,9 +34,11 @@ from .plotting import (
 )
 from .publication import export_ieee_panel, export_ieee_plot, panel_data
 from .wha_models import (
+    AdvancedWHAConfig,
     DislocationConfig,
     MicromechanicalConfig,
     MicrostructureConfig,
+    analyze_advanced_wha,
     analyze_dislocation_density,
     analyze_hall_petch,
     analyze_micromechanics,
@@ -131,6 +135,16 @@ class CorrectionApp:
         "matrix_yield_mpa",
         "w_hardening_mpa",
         "matrix_hardening_mpa",
+        "advanced_view",
+        "w_poisson_ratio",
+        "matrix_poisson_ratio",
+        "ww_contiguity",
+        "porosity_fraction",
+        "interface_strength_mpa",
+        "contiguity_coefficient_mpa",
+        "porosity_strength_exponent",
+        "w_density_multiplier",
+        "matrix_density_multiplier",
         "strain_unit",
         "stress_unit",
         "strain_sign",
@@ -191,6 +205,16 @@ class CorrectionApp:
             "matrix_yield_mpa": StringVar(value="350"),
             "w_hardening_mpa": StringVar(value="1500"),
             "matrix_hardening_mpa": StringVar(value="900"),
+            "advanced_view": StringVar(value="Rule-of-mixtures bounds"),
+            "w_poisson_ratio": StringVar(value="0.28"),
+            "matrix_poisson_ratio": StringVar(value="0.31"),
+            "ww_contiguity": StringVar(value="0.45"),
+            "porosity_fraction": StringVar(value="0.00"),
+            "interface_strength_mpa": StringVar(value="150"),
+            "contiguity_coefficient_mpa": StringVar(value="100"),
+            "porosity_strength_exponent": StringVar(value="1.5"),
+            "w_density_multiplier": StringVar(value="1.30"),
+            "matrix_density_multiplier": StringVar(value="0.50"),
             "strain_unit": StringVar(value="fraction"),
             "stress_unit": StringVar(value="MPa"),
             "strain_sign": StringVar(value="auto"),
@@ -215,6 +239,7 @@ class CorrectionApp:
         self.microstructure_tab = ttk.Frame(self.notebook, padding=8)
         self.dislocation_tab = ttk.Frame(self.notebook, padding=8)
         self.micromechanical_tab = ttk.Frame(self.notebook, padding=8)
+        self.advanced_wha_tab = ttk.Frame(self.notebook, padding=8)
         self.export_tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.import_tab, text="1  Import")
         self.notebook.add(self.setup_tab, text="2  Test setup")
@@ -227,7 +252,8 @@ class CorrectionApp:
         )
         self.notebook.add(self.dislocation_tab, text="8  Dislocation density")
         self.notebook.add(self.micromechanical_tab, text="9  WHA two-phase model")
-        self.notebook.add(self.export_tab, text="10  Export")
+        self.notebook.add(self.advanced_wha_tab, text="10  Advanced WHA models")
+        self.notebook.add(self.export_tab, text="11  Export")
         self._build_import_tab()
         self._build_setup_tab()
         self._build_analyze_tab()
@@ -237,6 +263,7 @@ class CorrectionApp:
         self._build_microstructure_tab()
         self._build_dislocation_tab()
         self._build_micromechanical_tab()
+        self._build_advanced_wha_tab()
         self._build_export_tab()
         ttk.Label(shell, textvariable=self.status).pack(fill="x", pady=(7, 0))
 
@@ -665,6 +692,102 @@ class CorrectionApp:
             default_stem="wha_two_phase",
         )
 
+    def _build_advanced_wha_tab(self) -> None:
+        """Build one dropdown-driven panel for advanced WHA sensitivities."""
+
+        tab = self.advanced_wha_tab
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(2, weight=1)
+        controls = ttk.Frame(tab)
+        controls.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        ttk.Label(controls, text="View").grid(row=0, column=0, sticky="w")
+        view = ttk.Combobox(
+            controls,
+            textvariable=self.values["advanced_view"],
+            values=[spec.label for spec in plots_for_panel("advanced_wha")],
+            state="readonly",
+            width=32,
+        )
+        view.grid(row=0, column=1, sticky="w", padx=(4, 12))
+        view.bind("<<ComboboxSelected>>", self._advanced_view_changed)
+        for index, (label, name) in enumerate(
+            (
+                ("W ν", "w_poisson_ratio"),
+                ("Matrix ν", "matrix_poisson_ratio"),
+                ("W-W contiguity", "ww_contiguity"),
+                ("Porosity", "porosity_fraction"),
+                ("Interface (MPa)", "interface_strength_mpa"),
+                ("Contiguity k (MPa)", "contiguity_coefficient_mpa"),
+                ("Porosity exponent", "porosity_strength_exponent"),
+                ("W rho multiplier", "w_density_multiplier"),
+                ("Matrix rho multiplier", "matrix_density_multiplier"),
+            )
+        ):
+            column = 2 * (index % 4) + 2
+            row = 0 if index < 4 else 1
+            ttk.Label(controls, text=label).grid(row=row, column=column, sticky="w")
+            ttk.Entry(controls, textvariable=self.values[name], width=7).grid(
+                row=row, column=column + 1, padx=(3, 7), pady=2
+            )
+        actions = ttk.Frame(controls)
+        actions.grid(row=1, column=0, columnspan=2, sticky="w")
+        ttk.Button(
+            actions, text="Recalculate", command=self._recalculate_advanced_wha
+        ).pack(side="left")
+        ttk.Button(
+            actions,
+            text="Export selected data…",
+            command=lambda: self._export_individual_data("advanced_wha"),
+        ).pack(side="left", padx=5)
+        ttk.Button(
+            actions,
+            text="Export selected IEEE…",
+            command=lambda: self._export_individual_ieee("advanced_wha"),
+        ).pack(side="left", padx=2)
+        self.plot_selections["advanced_wha"] = self.values["advanced_view"]
+        ttk.Label(
+            tab,
+            text=(
+                "Mori-Tanaka is elastic. Interface, contiguity, porosity, and "
+                "phase-density views are parameter sensitivities—not calibrated "
+                "failure models."
+            ),
+            wraplength=1180,
+        ).grid(row=1, column=0, sticky="w", pady=(0, 4))
+        content = ttk.PanedWindow(tab, orient="vertical")
+        content.grid(row=2, column=0, sticky="nsew")
+        plot_frame = ttk.Frame(content)
+        summary_frame = ttk.Frame(content)
+        content.add(plot_frame, weight=4)
+        content.add(summary_frame, weight=1)
+        plot_frame.columnconfigure(0, weight=1)
+        plot_frame.rowconfigure(0, weight=1)
+        self.advanced_wha_figure = Figure(
+            figsize=(10, 5), dpi=100, constrained_layout=True
+        )
+        self.advanced_wha_ax = self.advanced_wha_figure.add_subplot(111)
+        self.advanced_wha_canvas = FigureCanvasTkAgg(
+            self.advanced_wha_figure, master=plot_frame
+        )
+        self.advanced_wha_canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+        toolbar_frame = ttk.Frame(plot_frame)
+        toolbar_frame.grid(row=1, column=0, sticky="ew")
+        toolbar = NavigationToolbar2Tk(
+            self.advanced_wha_canvas, toolbar_frame, pack_toolbar=False
+        )
+        toolbar.update()
+        toolbar.pack(side="left")
+        summary_frame.columnconfigure(0, weight=1)
+        summary_frame.rowconfigure(0, weight=1)
+        self.advanced_wha_summary = ttk.Treeview(
+            summary_frame, columns=("value",), show="tree headings", height=6
+        )
+        self.advanced_wha_summary.heading("#0", text="Metric")
+        self.advanced_wha_summary.heading("value", text="Value")
+        self.advanced_wha_summary.column("#0", width=450)
+        self.advanced_wha_summary.column("value", width=500)
+        self.advanced_wha_summary.grid(row=0, column=0, sticky="nsew")
+
     def _panel_export_buttons(
         self, parent: ttk.Frame, panel: str, default_stem: str
     ) -> None:
@@ -898,6 +1021,27 @@ class CorrectionApp:
             matrix_hardening_mpa=float(self.values["matrix_hardening_mpa"].get()),
         )
 
+    def _advanced_wha_config(self) -> AdvancedWHAConfig:
+        return AdvancedWHAConfig(
+            tungsten_poisson_ratio=float(self.values["w_poisson_ratio"].get()),
+            matrix_poisson_ratio=float(self.values["matrix_poisson_ratio"].get()),
+            ww_contiguity=float(self.values["ww_contiguity"].get()),
+            porosity_fraction=float(self.values["porosity_fraction"].get()),
+            interface_strength_mpa=float(self.values["interface_strength_mpa"].get()),
+            contiguity_coefficient_mpa=float(
+                self.values["contiguity_coefficient_mpa"].get()
+            ),
+            porosity_strength_exponent=float(
+                self.values["porosity_strength_exponent"].get()
+            ),
+            tungsten_density_multiplier=float(
+                self.values["w_density_multiplier"].get()
+            ),
+            matrix_density_multiplier=float(
+                self.values["matrix_density_multiplier"].get()
+            ),
+        )
+
     def _calculate_wha_models(self) -> None:
         if self.result is None:
             return
@@ -910,9 +1054,13 @@ class CorrectionApp:
         self.result.micromechanical, micro_summary = analyze_micromechanics(
             self.result, self._micromechanical_config()
         )
+        self.result.advanced_wha, advanced_summary = analyze_advanced_wha(
+            self.result, self._micromechanical_config(), self._advanced_wha_config()
+        )
         self.result.summary["hall_petch_analysis"] = hp_summary
         self.result.summary["dislocation_density_analysis"] = density_summary
         self.result.summary["micromechanical_analysis"] = micro_summary
+        self.result.summary["advanced_wha_analysis"] = advanced_summary
 
     def _preview_result(self, *, show_errors: bool = True) -> None:
         try:
@@ -1014,6 +1162,7 @@ class CorrectionApp:
         self.dislocation_canvas.draw_idle()
         draw_micromechanical_panel(self.micromechanical_axes, self.result)
         self.micromechanical_canvas.draw_idle()
+        self._draw_advanced_wha()
         self._show_macroscopic_properties()
         self._show_model_table()
         self._show_hardening_summary()
@@ -1073,8 +1222,10 @@ class CorrectionApp:
     def _fill_summary_table(table: ttk.Treeview, summary: dict[str, object]) -> None:
         table.delete(*table.get_children())
         for key, value in summary.items():
-            if key == "inputs" and isinstance(value, dict):
-                parent = table.insert("", "end", text="Inputs", values=("",))
+            if isinstance(value, dict):
+                parent = table.insert(
+                    "", "end", text=key.replace("_", " "), values=("",)
+                )
                 for input_key, input_value in value.items():
                     table.insert(
                         parent,
@@ -1098,6 +1249,10 @@ class CorrectionApp:
         self._fill_summary_table(
             self.micromechanical_summary,
             self.result.summary.get("micromechanical_analysis", {}),
+        )
+        self._fill_summary_table(
+            self.advanced_wha_summary,
+            self.result.summary.get("advanced_wha_analysis", {}),
         )
 
     def _recalculate_work_hardening(self) -> None:
@@ -1176,6 +1331,37 @@ class CorrectionApp:
         draw_micromechanical_panel(self.micromechanical_axes, self.result)
         self.micromechanical_canvas.draw_idle()
         self._fill_summary_table(self.micromechanical_summary, summary)
+
+    def _draw_advanced_wha(self) -> None:
+        if self.result is None:
+            return
+        view = self._selected_plot_id("advanced_wha").split(".", 1)[1]
+        draw_advanced_wha_view(self.advanced_wha_ax, self.result, view=view)
+        self.advanced_wha_canvas.draw_idle()
+
+    def _advanced_view_changed(self, _event=None) -> None:
+        if self.result is not None:
+            self._draw_advanced_wha()
+            view = self._selected_plot_id("advanced_wha").split(".", 1)[1]
+            self.status.set(f"Advanced WHA view: {ADVANCED_WHA_VIEW_LABELS[view]}")
+
+    def _recalculate_advanced_wha(self) -> None:
+        if not self._require_result():
+            return
+        try:
+            assert self.result is not None
+            self.result.advanced_wha, summary = analyze_advanced_wha(
+                self.result,
+                self._micromechanical_config(),
+                self._advanced_wha_config(),
+            )
+        except ValueError as exc:
+            messagebox.showerror("Advanced WHA analysis failed", str(exc))
+            return
+        self.result.summary["advanced_wha_analysis"] = summary
+        self._draw_advanced_wha()
+        self._fill_summary_table(self.advanced_wha_summary, summary)
+        self.status.set("Advanced WHA sensitivity views recalculated.")
 
     def _selected_plot_id(self, panel: str) -> str:
         selected = self.plot_selections[panel].get()

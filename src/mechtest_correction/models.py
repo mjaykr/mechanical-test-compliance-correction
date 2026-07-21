@@ -62,3 +62,4 @@ class CorrectionResult:
     hall_petch: pd.DataFrame | None = None
     dislocation_density: pd.DataFrame | None = None
     micromechanical: pd.DataFrame | None = None
+    advanced_wha: dict[str, pd.DataFrame] | None = None

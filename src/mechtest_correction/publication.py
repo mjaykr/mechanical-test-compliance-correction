@@ -119,6 +119,7 @@ def panel_data(result: CorrectionResult, panel: str) -> pd.DataFrame:
         "microstructure": lambda item: _combined_panel_data(item, panel),
         "dislocation": lambda item: _combined_panel_data(item, panel),
         "micromechanical": lambda item: _combined_panel_data(item, panel),
+        "advanced_wha": lambda item: _combined_panel_data(item, panel),
     }
     if panel not in functions:
         raise ValueError(f"Unknown export panel: {panel}")

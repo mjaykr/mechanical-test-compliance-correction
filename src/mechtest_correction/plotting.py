@@ -7,6 +7,7 @@ from pathlib import Path
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.ticker import (
@@ -666,6 +667,177 @@ def draw_micromechanical_panel(
 ) -> None:
     draw_micromechanical_response(axes[0], result)
     draw_phase_response(axes[1], result)
+
+
+def draw_advanced_wha_view(
+    ax: plt.Axes, result: CorrectionResult, *, view: str
+) -> None:
+    """Draw one selectable advanced-WHA homogenization/sensitivity view."""
+
+    ax.clear()
+    data = (result.advanced_wha or {}).get(view, pd.DataFrame())
+    summary = result.summary.get("advanced_wha_analysis", {})
+    if data.empty:
+        ax.text(
+            0.5,
+            0.5,
+            str(summary.get("reason", "Advanced WHA analysis unavailable")),
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+        )
+        return
+    if view == "rule_mixtures":
+        x = 100.0 * data["engineering_strain"]
+        ax.plot(
+            x,
+            data["measured_engineering_stress_MPa"],
+            color="#222222",
+            lw=2,
+            label="Corrected data",
+        )
+        for column, color, style, label in (
+            ("Voigt_stress_MPa", "#0072B2", "-", "Rule of mixtures / Voigt"),
+            ("Reuss_stress_MPa", "#D55E00", "--", "Inverse rule / Reuss"),
+            ("Hill_stress_MPa", "#009E73", ":", "Hill mean"),
+        ):
+            ax.plot(x, data[column], color=color, linestyle=style, label=label)
+        ax.set_xlabel("Engineering strain (%)")
+        ax.set_ylabel("Engineering stress (MPa)")
+    elif view == "iso_responses":
+        x = 100.0 * data["engineering_strain"]
+        for column, color, style, label in (
+            ("W_phase_iso_strain_stress_MPa", "#0072B2", "-", "W phase, iso-strain"),
+            (
+                "matrix_phase_iso_strain_stress_MPa",
+                "#D55E00",
+                "--",
+                "Matrix phase, iso-strain",
+            ),
+            ("Voigt_stress_MPa", "#009E73", ":", "Iso-strain composite"),
+            ("Reuss_stress_MPa", "#7A7A7A", "-.", "Iso-stress composite"),
+        ):
+            ax.plot(x, data[column], color=color, linestyle=style, label=label)
+        ax.set_xlabel("Engineering strain (%)")
+        ax.set_ylabel("Stress (MPa)")
+    elif view == "mori_tanaka":
+        x = 100.0 * data["engineering_strain"]
+        ax.plot(
+            x,
+            data["measured_engineering_stress_MPa"],
+            color="#222222",
+            lw=2,
+            label="Corrected data",
+        )
+        ax.plot(
+            x,
+            data["Mori_Tanaka_elastic_stress_MPa"],
+            "--",
+            color="#CC79A7",
+            label="Mori-Tanaka elastic",
+        )
+        ax.set_xlabel("Engineering strain (%)")
+        ax.set_ylabel("Engineering stress (MPa)")
+    elif view == "load_partition":
+        x = 100.0 * data["engineering_strain"]
+        ax.plot(x, data["W_load_share_fraction"], color="#0072B2", label="W load share")
+        ax.plot(
+            x,
+            data["matrix_load_share_fraction"],
+            "--",
+            color="#D55E00",
+            label="Matrix load share",
+        )
+        ax.set_xlabel("Engineering strain (%)")
+        ax.set_ylabel("Iso-strain load-share fraction")
+    elif view == "interface":
+        ax.plot(data.iloc[:, 0], data["load_transfer_increment_MPa"], color="#009E73")
+        ax.set_xlabel("Interface-strength input (MPa)")
+        ax.set_ylabel("Load-transfer increment (MPa)")
+    elif view == "contiguity":
+        ax.plot(
+            data["W_W_contiguity"],
+            data["empirical_strength_correction_MPa"],
+            color="#D55E00",
+        )
+        ax.axhline(0.0, color="0.5", lw=0.8)
+        ax.set_xlabel("W-W contiguity")
+        ax.set_ylabel("Empirical strength correction (MPa)")
+    elif view == "porosity":
+        x = 100.0 * data["engineering_strain"]
+        ax.plot(
+            x,
+            data["Hill_dense_stress_MPa"],
+            color="#0072B2",
+            label="Dense Hill response",
+        )
+        ax.plot(
+            x,
+            data["porosity_corrected_Hill_stress_MPa"],
+            "--",
+            color="#D55E00",
+            label="Porosity-corrected",
+        )
+        ax.set_xlabel("Engineering strain (%)")
+        ax.set_ylabel("Engineering stress (MPa)")
+    elif view == "phase_flow":
+        x = 100.0 * data["engineering_strain"]
+        ax.plot(
+            x,
+            data["W_phase_iso_strain_stress_MPa"],
+            color="#0072B2",
+            label="BCC W phase",
+        )
+        ax.plot(
+            x,
+            data["matrix_phase_iso_strain_stress_MPa"],
+            "--",
+            color="#D55E00",
+            label="FCC matrix phase",
+        )
+        ax.set_xlabel("Engineering strain (%)")
+        ax.set_ylabel("Phase stress (MPa)")
+    elif view == "two_phase_dislocation":
+        x = 100.0 * data["true_plastic_strain"]
+        ax.plot(
+            x,
+            data["effective_apparent_density_m-2"],
+            color="#222222",
+            label="Effective density",
+        )
+        ax.plot(
+            x, data["W_phase_scenario_density_m-2"], color="#0072B2", label="W scenario"
+        )
+        ax.plot(
+            x,
+            data["matrix_phase_scenario_density_m-2"],
+            "--",
+            color="#D55E00",
+            label="Matrix scenario",
+        )
+        ax.set_xlabel("True plastic strain (%)")
+        ax.set_ylabel(r"Density, $\rho$ (m$^{-2}$)")
+    else:
+        raise ValueError(f"Unknown advanced WHA view: {view}")
+    ax.set_title(ADVANCED_WHA_VIEW_LABELS[view])
+    ax.set_xlim(left=0.0)
+    if view != "contiguity":
+        ax.set_ylim(bottom=0.0)
+    ax.legend(loc="best")
+    _polish(ax)
+
+
+ADVANCED_WHA_VIEW_LABELS = {
+    "rule_mixtures": "Rule-of-mixtures bounds",
+    "iso_responses": "Iso-strain and iso-stress response",
+    "mori_tanaka": "Mori-Tanaka / Eshelby elasticity",
+    "load_partition": "Phase load-partition estimate",
+    "interface": "Interface-strength sensitivity",
+    "contiguity": "W-W contiguity correction",
+    "porosity": "Porosity correction",
+    "phase_flow": "Separate BCC-W and FCC-matrix flows",
+    "two_phase_dislocation": "Two-phase density scenarios",
+}
 
 
 def plot_corrected_analysis(
