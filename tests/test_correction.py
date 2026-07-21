@@ -73,6 +73,19 @@ def test_flow_models_are_fit_from_yield_to_peak(synthetic_curve):
     )
 
 
+def test_work_hardening_analysis_is_attached(synthetic_curve):
+    frame, _, _ = synthetic_curve
+    result = correct_curve(frame, make_config("tension"))
+    assert result.work_hardening is not None
+    assert not result.work_hardening.empty
+    assert set(result.work_hardening["stage"].unique()) == {
+        "Stage II / early",
+        "Stage III / dynamic recovery",
+        "Stage IV / late",
+    }
+    assert result.summary["work_hardening_analysis"]["status"] == "ok"
+
+
 @pytest.mark.parametrize("mode", ["tension", "compression"])
 def test_true_conversion(mode, synthetic_curve):
     frame, _, _ = synthetic_curve

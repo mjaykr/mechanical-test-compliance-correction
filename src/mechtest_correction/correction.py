@@ -8,6 +8,7 @@ import pandas as pd
 from .analysis import calculate_mechanical_properties, fit_flow_models
 from .io import normalize_units, sign_factor
 from .models import CorrectionConfig, CorrectionResult
+from .work_hardening import analyze_work_hardening
 
 
 def _r_squared(observed: np.ndarray, predicted: np.ndarray) -> float:
@@ -272,12 +273,21 @@ def correct_curve(frame: pd.DataFrame, config: CorrectionConfig) -> CorrectionRe
         modulus_mpa=config.target_modulus_mpa,
         selected_offset=config.offset_strain,
     )
-    summary["flow_model_fits"] = fit_flow_models(
+    flow_fits = fit_flow_models(
         curve,
         modulus_mpa=config.target_modulus_mpa,
         yield_offset=config.offset_strain,
         end_criterion="peak",
     )
+    summary["flow_model_fits"] = flow_fits
+    work_hardening, work_hardening_summary = analyze_work_hardening(
+        curve, flow_fits, modulus_mpa=config.target_modulus_mpa
+    )
+    summary["work_hardening_analysis"] = work_hardening_summary
     return CorrectionResult(
-        config=config, audit=audit, corrected_curve=curve, summary=summary
+        config=config,
+        audit=audit,
+        corrected_curve=curve,
+        summary=summary,
+        work_hardening=work_hardening,
     )

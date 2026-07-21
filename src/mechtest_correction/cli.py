@@ -5,13 +5,14 @@ import json
 import sys
 from pathlib import Path
 
+import pandas as pd
 import tomllib
 
 from .analysis import flow_fit_data_frame, flow_models_frame, properties_frame
 from .correction import correct_curve
 from .io import read_curve
 from .models import CorrectionConfig
-from .plotting import plot_comparison, plot_corrected_analysis
+from .plotting import plot_comparison, plot_corrected_analysis, plot_work_hardening
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -154,6 +155,17 @@ def write_outputs(result, output_dir: Path, *, input_file: Path) -> dict[str, ob
     flow_fit_data_frame(
         result.corrected_curve, flow_fits, result.config.target_modulus_mpa
     ).to_csv(output_dir / "flow_fit_data.csv", index=False)
+    if result.work_hardening is not None:
+        result.work_hardening.to_csv(
+            output_dir / "work_hardening_data.csv", index=False
+        )
+    pd.DataFrame(
+        [
+            {"metric": key, "value": value}
+            for key, value in result.summary["work_hardening_analysis"].items()
+            if not isinstance(value, (dict, list))
+        ]
+    ).to_csv(output_dir / "work_hardening_summary.csv", index=False)
     summary = dict(result.summary)
     summary["input_file"] = str(input_file.resolve())
     summary["correction_equation"] = (
@@ -164,6 +176,7 @@ def write_outputs(result, output_dir: Path, *, input_file: Path) -> dict[str, ob
     )
     plot_comparison(result, output_dir)
     plot_corrected_analysis(result, output_dir)
+    plot_work_hardening(result, output_dir)
     return summary
 
 

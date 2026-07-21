@@ -20,7 +20,14 @@ from .cli import write_outputs
 from .correction import correct_curve
 from .io import numeric_column_names, read_data_table
 from .models import CorrectionConfig, CorrectionResult
-from .plotting import configure_plot_style, draw_corrected_analysis
+from .plotting import (
+    configure_plot_style,
+    draw_constitutive_assessment,
+    draw_macroscopic_response,
+    draw_work_hardening,
+)
+from .publication import export_ieee_panel, panel_data
+from .work_hardening import analyze_work_hardening
 
 
 def config_from_values(values: Mapping[str, str]) -> CorrectionConfig:
@@ -80,7 +87,7 @@ def prepare_curve(table: pd.DataFrame, values: Mapping[str, str]) -> pd.DataFram
 
 
 class CorrectionApp:
-    """Five-stage Tkinter workflow with correction and constitutive analysis."""
+    """Seven-stage workflow from import through work-hardening assessment."""
 
     SETTINGS_KEYS = (
         "data_basis",
@@ -94,6 +101,7 @@ class CorrectionApp:
         "offset_strain",
         "yield_offset_percent",
         "flow_fit_end",
+        "smoothing_window",
         "strain_unit",
         "stress_unit",
         "strain_sign",
@@ -135,6 +143,7 @@ class CorrectionApp:
             "offset_strain": StringVar(value="0.002"),
             "yield_offset_percent": StringVar(value="0.2"),
             "flow_fit_end": StringVar(value="peak"),
+            "smoothing_window": StringVar(value="51"),
             "strain_unit": StringVar(value="fraction"),
             "stress_unit": StringVar(value="MPa"),
             "strain_sign": StringVar(value="auto"),
@@ -154,18 +163,22 @@ class CorrectionApp:
         self.setup_tab = ttk.Frame(self.notebook, padding=10)
         self.analyze_tab = ttk.Frame(self.notebook, padding=8)
         self.corrected_analysis_tab = ttk.Frame(self.notebook, padding=8)
+        self.constitutive_tab = ttk.Frame(self.notebook, padding=8)
+        self.work_hardening_tab = ttk.Frame(self.notebook, padding=8)
         self.export_tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.import_tab, text="1  Import")
         self.notebook.add(self.setup_tab, text="2  Test setup")
         self.notebook.add(self.analyze_tab, text="3  Correct & review")
-        self.notebook.add(
-            self.corrected_analysis_tab, text="4  Corrected-data analysis"
-        )
-        self.notebook.add(self.export_tab, text="5  Export")
+        self.notebook.add(self.corrected_analysis_tab, text="4  Macroscopic response")
+        self.notebook.add(self.constitutive_tab, text="5  Constitutive assessment")
+        self.notebook.add(self.work_hardening_tab, text="6  Work hardening")
+        self.notebook.add(self.export_tab, text="7  Export")
         self._build_import_tab()
         self._build_setup_tab()
         self._build_analyze_tab()
         self._build_corrected_analysis_tab()
+        self._build_constitutive_tab()
+        self._build_work_hardening_tab()
         self._build_export_tab()
         ttk.Label(shell, textvariable=self.status).pack(fill="x", pady=(7, 0))
 
@@ -321,7 +334,50 @@ class CorrectionApp:
         )
         offset_combo.pack(side="left", padx=(5, 14))
         offset_combo.bind("<<ComboboxSelected>>", self._analysis_settings_changed)
-        ttk.Label(controls, text="Flow-fit end").pack(side="left")
+        self._panel_export_buttons(controls, "macroscopic", "macroscopic_response")
+        content = ttk.PanedWindow(tab, orient="vertical")
+        content.grid(row=1, column=0, sticky="nsew")
+        plot_frame = ttk.Frame(content)
+        table_frame = ttk.Frame(content)
+        content.add(plot_frame, weight=3)
+        content.add(table_frame, weight=2)
+        plot_frame.columnconfigure(0, weight=1)
+        plot_frame.rowconfigure(0, weight=1)
+        self.macro_figure = Figure(figsize=(10, 5), dpi=100, constrained_layout=True)
+        self.macro_axes = (
+            self.macro_figure.add_subplot(121),
+            self.macro_figure.add_subplot(122),
+        )
+        self.macro_canvas = FigureCanvasTkAgg(self.macro_figure, master=plot_frame)
+        self.macro_canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+        toolbar_frame = ttk.Frame(plot_frame)
+        toolbar_frame.grid(row=1, column=0, sticky="ew")
+        toolbar = NavigationToolbar2Tk(
+            self.macro_canvas, toolbar_frame, pack_toolbar=False
+        )
+        toolbar.update()
+        toolbar.pack(side="left")
+        self.macro_canvas.draw_idle()
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+        self.macro_property_table = ttk.Treeview(
+            table_frame, columns=("value", "unit"), show="tree headings", height=8
+        )
+        self.macro_property_table.heading("#0", text="Property")
+        self.macro_property_table.heading("value", text="Value")
+        self.macro_property_table.heading("unit", text="Unit")
+        self.macro_property_table.column("#0", width=440)
+        self.macro_property_table.column("value", width=150, anchor="e")
+        self.macro_property_table.column("unit", width=100)
+        self.macro_property_table.grid(row=0, column=0, sticky="nsew")
+
+    def _build_constitutive_tab(self) -> None:
+        tab = self.constitutive_tab
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(1, weight=1)
+        controls = ttk.Frame(tab)
+        controls.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        ttk.Label(controls, text="Fit end").pack(side="left")
         end_combo = ttk.Combobox(
             controls,
             textvariable=self.values["flow_fit_end"],
@@ -329,50 +385,33 @@ class CorrectionApp:
             state="readonly",
             width=10,
         )
-        end_combo.pack(side="left", padx=5)
+        end_combo.pack(side="left", padx=(5, 14))
         end_combo.bind("<<ComboboxSelected>>", self._analysis_settings_changed)
-        ttk.Label(
-            controls,
-            text=(
-                "Default: 0.2%. Use 0.02% only when required by the material "
-                "specification or reporting convention."
-            ),
-        ).pack(side="left", padx=12)
-
+        self._panel_export_buttons(controls, "constitutive", "constitutive_models")
         content = ttk.PanedWindow(tab, orient="vertical")
         content.grid(row=1, column=0, sticky="nsew")
         plot_frame = ttk.Frame(content)
         table_frame = ttk.Frame(content)
-        content.add(plot_frame, weight=4)
-        content.add(table_frame, weight=1)
+        content.add(plot_frame, weight=3)
+        content.add(table_frame, weight=2)
         plot_frame.columnconfigure(0, weight=1)
         plot_frame.rowconfigure(0, weight=1)
-        self.analysis_figure = Figure(figsize=(10, 6), dpi=100, constrained_layout=True)
-        grid = self.analysis_figure.add_gridspec(2, 2)
-        self.analysis_axes = (
-            self.analysis_figure.add_subplot(grid[0, 0]),
-            self.analysis_figure.add_subplot(grid[0, 1]),
-            self.analysis_figure.add_subplot(grid[1, :]),
+        self.constitutive_figure = Figure(
+            figsize=(10, 5), dpi=100, constrained_layout=True
         )
-        self.analysis_canvas = FigureCanvasTkAgg(
-            self.analysis_figure, master=plot_frame
+        self.constitutive_ax = self.constitutive_figure.add_subplot(111)
+        self.constitutive_canvas = FigureCanvasTkAgg(
+            self.constitutive_figure, master=plot_frame
         )
-        self.analysis_canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
-        analysis_toolbar_frame = ttk.Frame(plot_frame)
-        analysis_toolbar_frame.grid(row=1, column=0, sticky="ew")
-        self.analysis_toolbar = NavigationToolbar2Tk(
-            self.analysis_canvas, analysis_toolbar_frame, pack_toolbar=False
+        self.constitutive_canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+        toolbar_frame = ttk.Frame(plot_frame)
+        toolbar_frame.grid(row=1, column=0, sticky="ew")
+        toolbar = NavigationToolbar2Tk(
+            self.constitutive_canvas, toolbar_frame, pack_toolbar=False
         )
-        self.analysis_toolbar.update()
-        self.analysis_toolbar.pack(side="left")
-        for axis, title in zip(
-            self.analysis_axes,
-            ("Corrected engineering response", "True response", "Flow-law fits"),
-            strict=True,
-        ):
-            axis.set_title(title)
-        self.analysis_canvas.draw_idle()
-
+        toolbar.update()
+        toolbar.pack(side="left")
+        self.constitutive_canvas.draw_idle()
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(0, weight=1)
         columns = ("equation", "r_squared", "rmse", "parameters")
@@ -390,6 +429,73 @@ class CorrectionApp:
         self.model_table.column("rmse", width=90, anchor="e")
         self.model_table.column("parameters", width=430)
         self.model_table.grid(row=0, column=0, sticky="nsew")
+
+    def _build_work_hardening_tab(self) -> None:
+        tab = self.work_hardening_tab
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(1, weight=1)
+        controls = ttk.Frame(tab)
+        controls.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        ttk.Label(controls, text="Savitzky-Golay window").pack(side="left")
+        smoothing = ttk.Entry(
+            controls, textvariable=self.values["smoothing_window"], width=7
+        )
+        smoothing.pack(side="left", padx=(5, 4))
+        ttk.Button(
+            controls, text="Recalculate", command=self._recalculate_work_hardening
+        ).pack(side="left", padx=(0, 14))
+        self._panel_export_buttons(controls, "work_hardening", "work_hardening")
+        content = ttk.PanedWindow(tab, orient="vertical")
+        content.grid(row=1, column=0, sticky="nsew")
+        plot_frame = ttk.Frame(content)
+        summary_frame = ttk.Frame(content)
+        content.add(plot_frame, weight=4)
+        content.add(summary_frame, weight=1)
+        plot_frame.columnconfigure(0, weight=1)
+        plot_frame.rowconfigure(0, weight=1)
+        self.hardening_figure = Figure(
+            figsize=(10, 5), dpi=100, constrained_layout=True
+        )
+        self.hardening_axes = (
+            self.hardening_figure.add_subplot(121),
+            self.hardening_figure.add_subplot(122),
+        )
+        self.hardening_canvas = FigureCanvasTkAgg(
+            self.hardening_figure, master=plot_frame
+        )
+        self.hardening_canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+        toolbar_frame = ttk.Frame(plot_frame)
+        toolbar_frame.grid(row=1, column=0, sticky="ew")
+        toolbar = NavigationToolbar2Tk(
+            self.hardening_canvas, toolbar_frame, pack_toolbar=False
+        )
+        toolbar.update()
+        toolbar.pack(side="left")
+        self.hardening_canvas.draw_idle()
+        summary_frame.columnconfigure(0, weight=1)
+        summary_frame.rowconfigure(0, weight=1)
+        self.hardening_summary = ttk.Treeview(
+            summary_frame, columns=("value",), show="tree headings", height=6
+        )
+        self.hardening_summary.heading("#0", text="Metric")
+        self.hardening_summary.heading("value", text="Value")
+        self.hardening_summary.column("#0", width=410)
+        self.hardening_summary.column("value", width=480)
+        self.hardening_summary.grid(row=0, column=0, sticky="nsew")
+
+    def _panel_export_buttons(
+        self, parent: ttk.Frame, panel: str, default_stem: str
+    ) -> None:
+        ttk.Button(
+            parent,
+            text="Export plot data…",
+            command=lambda: self._export_panel_data(panel, default_stem),
+        ).pack(side="right", padx=4)
+        ttk.Button(
+            parent,
+            text="Export IEEE figure…",
+            command=lambda: self._export_ieee(panel, default_stem),
+        ).pack(side="right", padx=4)
 
     def _build_export_tab(self) -> None:
         tab = self.export_tab
@@ -573,6 +679,13 @@ class CorrectionApp:
                 yield_offset=config.offset_strain,
                 end_criterion=self.values["flow_fit_end"].get(),
             )
+            self.result.work_hardening, work_summary = analyze_work_hardening(
+                self.result.corrected_curve,
+                self.result.summary["flow_model_fits"],
+                modulus_mpa=config.target_modulus_mpa,
+                smoothing_window=int(self.values["smoothing_window"].get()),
+            )
+            self.result.summary["work_hardening_analysis"] = work_summary
             self._plot_result()
             self._show_summary()
         except (RuntimeError, ValueError) as exc:
@@ -631,18 +744,41 @@ class CorrectionApp:
         )
         self.status.set("Correction preview updated. Review the fit before exporting.")
         self.canvas.draw_idle()
-        self._update_corrected_analysis()
+        self._update_analysis_panels()
 
     def _analysis_settings_changed(self, _event=None) -> None:
         if self.table is not None:
             self._preview_result(show_errors=False)
 
-    def _update_corrected_analysis(self) -> None:
+    def _update_analysis_panels(self) -> None:
         if self.result is None:
             return
-        draw_corrected_analysis(self.analysis_axes, self.result)
-        self.analysis_canvas.draw_idle()
+        draw_macroscopic_response(self.macro_axes, self.result)
+        self.macro_canvas.draw_idle()
+        draw_constitutive_assessment(self.constitutive_ax, self.result)
+        self.constitutive_canvas.draw_idle()
+        draw_work_hardening(self.hardening_axes, self.result)
+        self.hardening_canvas.draw_idle()
+        self._show_macroscopic_properties()
         self._show_model_table()
+        self._show_hardening_summary()
+
+    def _show_macroscopic_properties(self) -> None:
+        self.macro_property_table.delete(*self.macro_property_table.get_children())
+        if self.result is None:
+            return
+        for item in self.result.summary["mechanical_properties"].values():
+            value = (
+                "not available"
+                if item["value"] is None
+                else f"{float(item['value']):.7g}"
+            )
+            self.macro_property_table.insert(
+                "",
+                "end",
+                text=str(item["label"]),
+                values=(value, item["unit"]),
+            )
 
     def _show_model_table(self) -> None:
         self.model_table.delete(*self.model_table.get_children())
@@ -667,6 +803,77 @@ class CorrectionApp:
                 text=name,
                 values=(model["equation"], r_squared, rmse, parameters),
             )
+
+    def _show_hardening_summary(self) -> None:
+        self.hardening_summary.delete(*self.hardening_summary.get_children())
+        if self.result is None:
+            return
+        for key, value in self.result.summary["work_hardening_analysis"].items():
+            self.hardening_summary.insert(
+                "", "end", text=key.replace("_", " "), values=(value,)
+            )
+
+    def _recalculate_work_hardening(self) -> None:
+        if self.result is None:
+            messagebox.showwarning(
+                "No corrected data", "Apply the compliance correction first."
+            )
+            return
+        try:
+            self.result.work_hardening, summary = analyze_work_hardening(
+                self.result.corrected_curve,
+                self.result.summary["flow_model_fits"],
+                modulus_mpa=self.result.config.target_modulus_mpa,
+                smoothing_window=int(self.values["smoothing_window"].get()),
+            )
+        except ValueError as exc:
+            messagebox.showerror("Work-hardening analysis failed", str(exc))
+            return
+        self.result.summary["work_hardening_analysis"] = summary
+        draw_work_hardening(self.hardening_axes, self.result)
+        self.hardening_canvas.draw_idle()
+        self._show_hardening_summary()
+
+    def _export_panel_data(self, panel: str, default_stem: str) -> None:
+        if self.result is None:
+            messagebox.showwarning(
+                "No corrected data", "Apply the compliance correction first."
+            )
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            initialfile=f"{default_stem}_data.csv",
+            filetypes=[("CSV data", "*.csv")],
+        )
+        if not path:
+            return
+        data = panel_data(self.result, panel)
+        if data.empty:
+            messagebox.showerror("No plot data", "This analysis panel has no data.")
+            return
+        data.to_csv(path, index=False)
+        self.status.set(f"Plot data exported to {path}")
+
+    def _export_ieee(self, panel: str, default_stem: str) -> None:
+        if self.result is None:
+            messagebox.showwarning(
+                "No corrected data", "Apply the compliance correction first."
+            )
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            initialfile=f"{default_stem}_ieee.pdf",
+            filetypes=[("PDF base name", "*.pdf")],
+        )
+        if not path:
+            return
+        stem = Path(path).with_suffix("")
+        try:
+            outputs = export_ieee_panel(self.result, panel, stem, use_latex=True)
+        except (OSError, RuntimeError, ValueError) as exc:
+            messagebox.showerror("IEEE export failed", str(exc))
+            return
+        self.status.set(f"IEEE PDF, PNG, TIFF, and CSV exported beside {outputs[0]}")
 
     def _reset_fit(self) -> None:
         self.values["fit_min"].set("0.0005")
@@ -700,7 +907,11 @@ class CorrectionApp:
                     self.summary.insert(
                         "", "end", text=f"Caveat {index}", values=(caveat,)
                     )
-            elif key not in {"mechanical_properties", "flow_model_fits"}:
+            elif key not in {
+                "mechanical_properties",
+                "flow_model_fits",
+                "work_hardening_analysis",
+            }:
                 self.summary.insert(
                     "", "end", text=key.replace("_", " "), values=(value,)
                 )

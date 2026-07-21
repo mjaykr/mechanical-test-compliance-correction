@@ -58,3 +58,4 @@ class CorrectionResult:
     audit: pd.DataFrame
     corrected_curve: pd.DataFrame
     summary: dict[str, object]
+    work_hardening: pd.DataFrame | None = None

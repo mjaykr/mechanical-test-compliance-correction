@@ -93,7 +93,7 @@ the same audit CSV, corrected curve, JSON summary, and figures as the command-
 line tool. It proposes column mappings automatically and lets you select a
 different pair when the machine export contains additional channels.
 
-The interactive workflow is arranged in four tabs:
+The interactive workflow is arranged in seven tabs:
 
 1. **Import** previews up to 100 rows, identifies numeric columns, proposes a
    strain/stress or extension/load mapping, and lets you correct that mapping.
@@ -102,9 +102,12 @@ The interactive workflow is arranged in four tabs:
 3. **Correct & review** embeds the raw and corrected curves. Drag horizontally
    over the raw graph to select the elastic fitting interval, then inspect the
    apparent and recovered moduli, fit R-squared, toe strain, and compliance.
-4. **Corrected-data analysis** plots corrected engineering and true responses,
-   identifies proof yield, and compares post-yield flow-law fits.
-5. **Export** saves the complete audit outputs and an `analysis_settings.json`
+4. **Macroscopic response** plots corrected engineering and true responses,
+   identifies proof yield, and tabulates tensile or compression properties.
+5. **Constitutive assessment** compares post-yield flow-law fits and parameters.
+6. **Work hardening** plots Kocks–Mecking `theta(sigma)` and `theta(epsilon_p)`,
+   with derivative smoothing and data-driven stage segmentation.
+7. **Export** saves the complete audit outputs and an `analysis_settings.json`
    file. Settings can also be saved and reloaded independently.
 
 The graph selection is an analysis aid: use a visibly linear, pre-yield region
@@ -158,9 +161,34 @@ largest R-squared. The model set follows commonly evaluated metallic flow laws;
 see this [comparative model study](https://doi.org/10.1007/s00170-025-16068-8)
 and this [experimental compression application](https://pmc.ncbi.nlm.nih.gov/articles/PMC10057155/).
 
-SciencePlots is no longer used or required. Figures use standard Matplotlib so
-the GUI and exports do not depend on a LaTeX installation or journal-specific
-style package.
+## Work-hardening and Kocks–Mecking analysis
+
+The instantaneous hardening rate is calculated as
+`theta = d(true stress) / d(true plastic strain)` after uniform resampling and
+Savitzky–Golay smoothing. The smoothing window is adjustable in the GUI. The
+tool plots both `theta` versus true stress (the Kocks–Mecking representation)
+and `theta` versus true plastic strain. A three-piece linear least-squares
+segmentation labels early/Stage II, dynamic-recovery/Stage III, and late/Stage
+IV regions. The Stage III `theta–sigma` line, its R-squared, and extrapolated
+saturation stress are reported when defined.
+
+These stage labels are data-driven curve descriptions, not standalone evidence
+for a specific dislocation mechanism. Numerical derivatives are sensitive to
+noise, smoothing, machine oscillation, adiabatic heating, friction, barreling,
+and localization. The implementation follows the classic
+[Mecking–Kocks formulation](https://doi.org/10.1016/0001-6160(81)90112-7) and
+the experimental definition used in this
+[Kocks–Mecking steel study](https://doi.org/10.1016/j.msea.2013.03.044).
+
+## Plot-data and IEEE export
+
+Each of the three analysis panels has an **Export plot data** button and an
+**Export IEEE figure** button. Live GUI plots use standard Matplotlib. IEEE
+export alone loads SciencePlots' `science` and `ieee` styles, enables LaTeX, and
+creates a vector PDF plus 600 dpi PNG and TIFF files. The exact plotted data are
+saved beside the figure as CSV. MiKTeX, TeX Live, or MacTeX is required for
+final IEEE export; the application reports an error rather than silently
+substituting a non-LaTeX final figure.
 
 ### Command line
 
@@ -196,6 +224,8 @@ Each run creates:
 - `mechanical_properties.csv`: mode-specific corrected-data properties.
 - `flow_model_fits.csv`: equations, parameters, R-squared, and RMSE.
 - `flow_fit_data.csv`: experimental true flow curve and model predictions.
+- `work_hardening_data.csv`: true stress, plastic strain, theta, and stage.
+- `work_hardening_summary.csv`: smoothing, stage boundaries, and Stage III fit.
 - `correction_audit.csv`: original rows, normalized data, removed compliance,
   toe correction, inclusion status, and monotonic adjustment.
 - `summary.json`: assumptions, fitted values, proof stress, terminal values,
@@ -204,6 +234,8 @@ Each run creates:
 - `stress_strain_comparison.pdf`: vector figure.
 - `corrected_data_analysis.png`: engineering, true, and flow-model panels.
 - `corrected_data_analysis.pdf`: vector version of the analysis panels.
+- `work_hardening_analysis.png`: Kocks–Mecking and theta-evolution panels.
+- `work_hardening_analysis.pdf`: vector work-hardening figure.
 
 ## Sign and unit conventions
 

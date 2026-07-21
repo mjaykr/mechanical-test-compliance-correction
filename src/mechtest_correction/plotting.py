@@ -55,6 +55,11 @@ def _yield_values(result: CorrectionResult) -> tuple[float | None, float | None]
     return result.summary["proof_strain"], result.summary["proof_stress_MPa"]
 
 
+def _percent_text(value: float) -> str:
+    marker = r"\%" if mpl.rcParams["text.usetex"] else "%"
+    return f"{value:g}{marker} offset"
+
+
 def plot_comparison(
     result: CorrectionResult,
     output_dir: str | Path,
@@ -115,7 +120,7 @@ def plot_comparison(
         config.target_modulus_mpa * (line_strain - config.offset_strain),
         color="#009E73",
         linestyle="--",
-        label=f"{100 * config.offset_strain:g}% offset",
+        label=_percent_text(100 * config.offset_strain),
     )
     if proof_strain is not None and proof_stress is not None:
         ax2.plot(
@@ -142,12 +147,12 @@ def plot_comparison(
     return png, pdf
 
 
-def draw_corrected_analysis(
-    axes: tuple[plt.Axes, plt.Axes, plt.Axes], result: CorrectionResult
+def draw_macroscopic_response(
+    axes: tuple[plt.Axes, plt.Axes], result: CorrectionResult
 ) -> None:
-    """Draw engineering, true, and flow-law panels on existing axes."""
+    """Draw corrected engineering and true macroscopic response panels."""
 
-    engineering_ax, true_ax, flow_ax = axes
+    engineering_ax, true_ax = axes
     for axis in axes:
         axis.clear()
     curve = result.corrected_curve
@@ -174,7 +179,7 @@ def draw_corrected_analysis(
         offset_line[valid_offset],
         "--",
         color="#009E73",
-        label=f"{100 * config.offset_strain:g}% offset",
+        label=_percent_text(100 * config.offset_strain),
     )
     if proof_strain is not None and proof_stress is not None:
         engineering_ax.plot(
@@ -212,6 +217,13 @@ def draw_corrected_analysis(
     true_ax.legend(loc="best")
     _polish(true_ax)
 
+
+def draw_constitutive_assessment(flow_ax: plt.Axes, result: CorrectionResult) -> None:
+    """Draw corrected flow stress with all constitutive-model predictions."""
+
+    flow_ax.clear()
+    curve = result.corrected_curve
+    config = result.config
     fits = result.summary["flow_model_fits"]
     fit_data = flow_fit_data_frame(curve, fits, config.target_modulus_mpa)
     if fit_data.empty:
@@ -263,6 +275,75 @@ def draw_corrected_analysis(
     _polish(flow_ax)
 
 
+def draw_corrected_analysis(
+    axes: tuple[plt.Axes, plt.Axes, plt.Axes], result: CorrectionResult
+) -> None:
+    """Draw engineering, true, and flow-law panels on existing axes."""
+
+    draw_macroscopic_response((axes[0], axes[1]), result)
+    draw_constitutive_assessment(axes[2], result)
+
+
+def draw_work_hardening(
+    axes: tuple[plt.Axes, plt.Axes], result: CorrectionResult
+) -> None:
+    """Draw Kocks-Mecking theta(sigma) and theta(epsilon_p) panels."""
+
+    km_ax, evolution_ax = axes
+    km_ax.clear()
+    evolution_ax.clear()
+    data = result.work_hardening
+    summary = result.summary.get("work_hardening_analysis", {})
+    if data is None or data.empty:
+        reason = str(summary.get("reason", "Work-hardening analysis unavailable"))
+        for axis in axes:
+            axis.text(
+                0.5, 0.5, reason, transform=axis.transAxes, ha="center", va="center"
+            )
+        return
+    stage_styles = {
+        "Stage II / early": ("#0072B2", "Stage II / early"),
+        "Stage III / dynamic recovery": ("#D55E00", "Stage III / recovery"),
+        "Stage IV / late": ("#009E73", "Stage IV / late"),
+    }
+    for stage, (color, label) in stage_styles.items():
+        selected = data["stage"] == stage
+        km_ax.plot(
+            data.loc[selected, "true_stress_MPa"],
+            data.loc[selected, "hardening_rate_theta_MPa"],
+            color=color,
+            label=label,
+        )
+        evolution_ax.plot(
+            100.0 * data.loc[selected, "true_plastic_strain"],
+            data.loc[selected, "hardening_rate_theta_MPa"],
+            color=color,
+            label=label,
+        )
+    stage_three = data["stage"] == "Stage III / dynamic recovery"
+    if stage_three.any() and summary.get("stage_III_KM_slope") is not None:
+        stress = data.loc[stage_three, "true_stress_MPa"].to_numpy(dtype=float)
+        theta_fit = (
+            float(summary["stage_III_KM_intercept_MPa"])
+            + float(summary["stage_III_KM_slope"]) * stress
+        )
+        km_ax.plot(
+            stress, theta_fit, "--", color="#222222", label="Stage III linear fit"
+        )
+    km_ax.axhline(0.0, color="0.5", linewidth=0.8)
+    km_ax.set_title("Kocks-Mecking plot")
+    km_ax.set_xlabel("True stress (MPa)")
+    km_ax.set_ylabel(r"Hardening rate, $\theta$ (MPa)")
+    km_ax.legend(loc="best")
+    _polish(km_ax)
+    evolution_ax.axhline(0.0, color="0.5", linewidth=0.8)
+    evolution_ax.set_title("Hardening-rate evolution")
+    evolution_ax.set_xlabel("True plastic strain (%)")
+    evolution_ax.set_ylabel(r"Hardening rate, $\theta$ (MPa)")
+    evolution_ax.legend(loc="best")
+    _polish(evolution_ax)
+
+
 def plot_corrected_analysis(
     result: CorrectionResult, output_dir: str | Path
 ) -> tuple[Path, Path]:
@@ -282,6 +363,25 @@ def plot_corrected_analysis(
     fig.tight_layout()
     png = out / "corrected_data_analysis.png"
     pdf = out / "corrected_data_analysis.pdf"
+    fig.savefig(png)
+    fig.savefig(pdf, metadata={"Creator": "Mechanical Test Compliance Correction"})
+    plt.close(fig)
+    return png, pdf
+
+
+def plot_work_hardening(
+    result: CorrectionResult, output_dir: str | Path
+) -> tuple[Path, Path]:
+    """Save Kocks-Mecking and hardening-rate evolution panels."""
+
+    configure_plot_style()
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(1, 2, figsize=(10.0, 4.2))
+    draw_work_hardening((axes[0], axes[1]), result)
+    fig.tight_layout()
+    png = out / "work_hardening_analysis.png"
+    pdf = out / "work_hardening_analysis.pdf"
     fig.savefig(png)
     fig.savefig(pdf, metadata={"Creator": "Mechanical Test Compliance Correction"})
     plt.close(fig)
