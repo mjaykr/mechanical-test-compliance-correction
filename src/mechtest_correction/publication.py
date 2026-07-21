@@ -29,6 +29,25 @@ IEEE_DOUBLE_COLUMN = 7.16
 GOLDEN_RATIO = 0.618
 
 
+def latex_available() -> bool:
+    """Return whether a LaTeX executable is available to Matplotlib."""
+
+    return shutil.which("latex") is not None
+
+
+def _resolve_latex_mode(use_latex: bool | None) -> bool:
+    """Prefer LaTeX automatically, unless a caller explicitly chooses a mode."""
+
+    if use_latex is None:
+        return latex_available()
+    if use_latex and not latex_available():
+        raise RuntimeError(
+            "LaTeX was requested but was not found. Install MiKTeX, TeX Live, "
+            "or MacTeX, or use automatic export for a clearly labelled draft."
+        )
+    return use_latex
+
+
 def _configure_ieee(*, use_latex: bool) -> None:
     try:
         import scienceplots  # noqa: F401
@@ -36,11 +55,6 @@ def _configure_ieee(*, use_latex: bool) -> None:
         raise RuntimeError(
             "SciencePlots is required for IEEE export. Run install.ps1 again."
         ) from exc
-    if use_latex and shutil.which("latex") is None:
-        raise RuntimeError(
-            "LaTeX was not found. Install MiKTeX, TeX Live, or MacTeX before "
-            "exporting a final IEEE figure."
-        )
     styles = ["science", "ieee"] if use_latex else ["science", "ieee", "no-latex"]
     plt.style.use(styles)
     mpl.rcParams.update(
@@ -139,13 +153,20 @@ def _combined_panel_data(result: CorrectionResult, panel: str) -> pd.DataFrame:
     return pd.concat(frames, axis=1) if frames else pd.DataFrame()
 
 
-def _save_figure(fig: plt.Figure, output_stem: Path) -> tuple[Path, Path, Path]:
+def _save_figure(
+    fig: plt.Figure, output_stem: Path, *, use_latex: bool
+) -> tuple[Path, Path, Path]:
     output_stem.parent.mkdir(parents=True, exist_ok=True)
     pdf = output_stem.with_suffix(".pdf")
     png = output_stem.with_suffix(".png")
     tiff = output_stem.with_suffix(".tiff")
     metadata = {
-        "Creator": "Mechanical Test Compliance Correction + SciencePlots IEEE",
+        "Creator": (
+            "Mechanical Test Compliance Correction + SciencePlots IEEE"
+            if use_latex
+            else "Mechanical Test Compliance Correction + SciencePlots IEEE "
+            "(draft no-LaTeX fallback)"
+        ),
         "Producer": "Matplotlib",
     }
     fig.savefig(pdf, metadata=metadata)
@@ -162,6 +183,15 @@ def _save_figure(fig: plt.Figure, output_stem: Path) -> tuple[Path, Path, Path]:
     return pdf, png, tiff
 
 
+def _export_stem(output_stem: str | Path, *, use_latex: bool) -> Path:
+    """Label non-LaTeX IEEE exports as drafts in their file names."""
+
+    stem = Path(output_stem)
+    if use_latex:
+        return stem
+    return stem.with_name(f"{stem.name}_draft_no_latex")
+
+
 def _agg_subplots(*, ncols: int = 1, figsize: tuple[float, float]):
     """Create export axes without invoking an interactive GUI backend."""
 
@@ -176,13 +206,14 @@ def export_ieee_panel(
     panel: str,
     output_stem: str | Path,
     *,
-    use_latex: bool = True,
+    use_latex: bool | None = None,
 ) -> tuple[Path, Path, Path, Path]:
-    """Export one panel as IEEE PDF/PNG/TIFF plus its source-data CSV."""
+    """Export a panel, preferring LaTeX or clearly labelling a draft fallback."""
 
-    stem = Path(output_stem)
+    latex_enabled = _resolve_latex_mode(use_latex)
+    stem = _export_stem(output_stem, use_latex=latex_enabled)
     with plt.rc_context():
-        _configure_ieee(use_latex=use_latex)
+        _configure_ieee(use_latex=latex_enabled)
         if panel == "macroscopic":
             fig, axes = _agg_subplots(
                 ncols=2,
@@ -241,7 +272,7 @@ def export_ieee_panel(
         else:
             raise ValueError(f"Unknown export panel: {panel}")
         fig.tight_layout(pad=0.25)
-        pdf, png, tiff = _save_figure(fig, stem)
+        pdf, png, tiff = _save_figure(fig, stem, use_latex=latex_enabled)
         fig.clear()
     csv = stem.with_name(stem.name + "_data").with_suffix(".csv")
     panel_data(result, panel).to_csv(csv, index=False)
@@ -253,17 +284,18 @@ def export_ieee_plot(
     plot_id: str,
     output_stem: str | Path,
     *,
-    use_latex: bool = True,
+    use_latex: bool | None = None,
 ) -> tuple[Path, Path, Path, Path]:
-    """Export one registered subplot at IEEE single-column size plus CSV data."""
+    """Export one subplot, preferring LaTeX or clearly labelling a draft fallback."""
 
     spec = get_plot_spec(plot_id)
     data = plot_data(result, plot_id)
     if data.empty:
         raise ValueError(f"No data are available for {spec.label}")
-    stem = Path(output_stem)
+    latex_enabled = _resolve_latex_mode(use_latex)
+    stem = _export_stem(output_stem, use_latex=latex_enabled)
     with plt.rc_context():
-        _configure_ieee(use_latex=use_latex)
+        _configure_ieee(use_latex=latex_enabled)
         fig, axis = _agg_subplots(
             figsize=(IEEE_SINGLE_COLUMN, IEEE_SINGLE_COLUMN * GOLDEN_RATIO)
         )
@@ -272,7 +304,7 @@ def export_ieee_plot(
         axis.set_xlabel(spec.latex_xlabel)
         axis.set_ylabel(spec.latex_ylabel)
         fig.tight_layout(pad=0.2)
-        pdf, png, tiff = _save_figure(fig, stem)
+        pdf, png, tiff = _save_figure(fig, stem, use_latex=latex_enabled)
         fig.clear()
     csv = stem.with_name(stem.name + "_data").with_suffix(".csv")
     data.to_csv(csv, index=False)

@@ -291,11 +291,12 @@ The assumptions follow modern SHPB guidance
 Every analysis panel now uses a stable plot registry. Select any individual
 subplot and use **Plot data** or **Plot IEEE**, or export the complete panel with
 **Panel data** or **Panel IEEE**. Live GUI plots use standard Matplotlib. IEEE
-export alone loads SciencePlots' `science` and `ieee` styles, keeps LaTeX
-enabled, and creates a vector PDF plus 600 dpi PNG and TIFF files. The exact
-registered plot data are saved beside the figure as CSV. MiKTeX, TeX Live, or
-MacTeX is required for final IEEE export; the application reports an error
-rather than silently substituting a non-LaTeX final figure.
+export prioritises LaTeX and loads SciencePlots' `science` and `ieee` styles when
+`latex` is available. If LaTeX is absent, it instead uses SciencePlots'
+`no-latex` style so the export still completes; those PDF, PNG, TIFF, and CSV
+files are explicitly suffixed `_draft_no_latex`. Install MiKTeX, TeX Live, or
+MacTeX to produce the final LaTeX-rendered version. The exact registered plot
+data are saved beside every figure as CSV.
 
 ### Command line
 

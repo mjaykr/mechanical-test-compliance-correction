@@ -41,7 +41,12 @@ from .plotting import (
     draw_shpb_view,
     draw_work_hardening,
 )
-from .publication import export_ieee_panel, export_ieee_plot, panel_data
+from .publication import (
+    export_ieee_panel,
+    export_ieee_plot,
+    latex_available,
+    panel_data,
+)
 from .wha_models import (
     AdvancedWHAConfig,
     DislocationConfig,
@@ -2065,13 +2070,14 @@ class CorrectionApp:
         if not path:
             return
         try:
-            outputs = export_ieee_plot(
-                self.result, plot_id, Path(path).with_suffix(""), use_latex=True
-            )
+            outputs = export_ieee_plot(self.result, plot_id, Path(path).with_suffix(""))
         except (OSError, RuntimeError, ValueError) as exc:
             messagebox.showerror("IEEE export failed", str(exc))
             return
-        self.status.set(f"Individual IEEE plot and CSV exported beside {outputs[0]}")
+        latex_note = "with LaTeX" if latex_available() else "as a no-LaTeX draft"
+        self.status.set(
+            f"Individual IEEE plot and CSV exported {latex_note} beside {outputs[0]}"
+        )
 
     def _export_panel_data(self, panel: str, default_stem: str) -> None:
         if self.result is None:
@@ -2108,11 +2114,14 @@ class CorrectionApp:
             return
         stem = Path(path).with_suffix("")
         try:
-            outputs = export_ieee_panel(self.result, panel, stem, use_latex=True)
+            outputs = export_ieee_panel(self.result, panel, stem)
         except (OSError, RuntimeError, ValueError) as exc:
             messagebox.showerror("IEEE export failed", str(exc))
             return
-        self.status.set(f"IEEE PDF, PNG, TIFF, and CSV exported beside {outputs[0]}")
+        latex_note = "with LaTeX" if latex_available() else "as a no-LaTeX draft"
+        self.status.set(
+            f"IEEE PDF, PNG, TIFF, and CSV exported {latex_note} beside {outputs[0]}"
+        )
 
     def _reset_fit(self) -> None:
         self.values["fit_min"].set("0.0005")
