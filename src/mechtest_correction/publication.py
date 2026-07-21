@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import warnings
 from pathlib import Path
@@ -11,6 +12,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
+from matplotlib.text import Text
 
 from .analysis import flow_fit_data_frame
 from .models import CorrectionResult
@@ -192,6 +194,42 @@ def _export_stem(output_stem: str | Path, *, use_latex: bool) -> Path:
     return stem.with_name(f"{stem.name}_draft_no_latex")
 
 
+def _plain_text(text: str) -> str:
+    """Convert the subset of LaTeX labels used by this app to plain Unicode."""
+
+    replacements = (
+        (r"\dot{\varepsilon}", "ε̇"),
+        (r"\varepsilon", "ε"),
+        (r"\epsilon", "ε"),
+        (r"\sigma", "σ"),
+        (r"\theta", "θ"),
+        (r"\rho", "ρ"),
+        (r"\mu", "μ"),
+        (r"\alpha", "α"),
+        (r"\beta", "β"),
+        (r"\gamma", "γ"),
+        (r"\Delta", "Δ"),
+        (r"\%", "%"),
+        (r"\,", " "),
+    )
+    converted = text
+    for latex, plain in replacements:
+        converted = converted.replace(latex, plain)
+    for macro in ("mathrm", "mathdefault", "text"):
+        converted = re.sub(rf"\\{macro}\{{([^{{}}]*)\}}", r"\1", converted)
+    converted = converted.replace("$", "").replace("{", "").replace("}", "")
+    return re.sub(r"\\[A-Za-z]+|\\", "", converted)
+
+
+def _normalise_no_latex_text(fig: plt.Figure) -> None:
+    """Remove LaTeX source syntax from all visible text in draft exports."""
+
+    for artist in fig.findobj(match=Text):
+        text = artist.get_text()
+        if "\\" in text or "$" in text:
+            artist.set_text(_plain_text(text))
+
+
 def _agg_subplots(*, ncols: int = 1, figsize: tuple[float, float]):
     """Create export axes without invoking an interactive GUI backend."""
 
@@ -271,6 +309,8 @@ def export_ieee_panel(
                 )
         else:
             raise ValueError(f"Unknown export panel: {panel}")
+        if not latex_enabled:
+            _normalise_no_latex_text(fig)
         fig.tight_layout(pad=0.25)
         pdf, png, tiff = _save_figure(fig, stem, use_latex=latex_enabled)
         fig.clear()
@@ -303,6 +343,8 @@ def export_ieee_plot(
         axis.set_title("")
         axis.set_xlabel(spec.latex_xlabel)
         axis.set_ylabel(spec.latex_ylabel)
+        if not latex_enabled:
+            _normalise_no_latex_text(fig)
         fig.tight_layout(pad=0.2)
         pdf, png, tiff = _save_figure(fig, stem, use_latex=latex_enabled)
         fig.clear()

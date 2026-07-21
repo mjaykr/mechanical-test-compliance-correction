@@ -1,4 +1,5 @@
 import pytest
+from matplotlib.figure import Figure
 
 from mechtest_correction import CorrectionConfig, correct_curve, publication
 from mechtest_correction.publication import export_ieee_panel, panel_data
@@ -69,3 +70,17 @@ def test_auto_export_prioritises_latex_when_it_is_available(monkeypatch):
     monkeypatch.setattr(publication.shutil, "which", lambda _: "C:/tex/latex.exe")
 
     assert publication._resolve_latex_mode(None) is True
+
+
+def test_no_latex_export_normalises_latex_syntax_in_all_visible_text():
+    figure = Figure()
+    axis = figure.subplots()
+    axis.set_xlabel(r"True strain, $\varepsilon_{\mathrm{true}}$ (\%)")
+    axis.set_ylabel(r"Density, $\rho$ ($\mathrm{m}^{-2}$)")
+    axis.text(0.5, 0.5, r"$\dot{\varepsilon}$ = 10 $\mathrm{s}^{-1}$")
+
+    publication._normalise_no_latex_text(figure)
+
+    assert axis.get_xlabel() == "True strain, ε_true (%)"
+    assert axis.get_ylabel() == "Density, ρ (m^-2)"
+    assert axis.texts[0].get_text() == "ε̇ = 10 s^-1"

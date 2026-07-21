@@ -296,7 +296,9 @@ export prioritises LaTeX and loads SciencePlots' `science` and `ieee` styles whe
 `no-latex` style so the export still completes; those PDF, PNG, TIFF, and CSV
 files are explicitly suffixed `_draft_no_latex`. Install MiKTeX, TeX Live, or
 MacTeX to produce the final LaTeX-rendered version. The exact registered plot
-data are saved beside every figure as CSV.
+data are saved beside every figure as CSV. Draft fallbacks also convert all
+visible labels and annotations to plain text (for example `%`, `ε`, and `σ`),
+so no LaTeX source such as `\%` appears in the figure.
 
 ### Command line
 
