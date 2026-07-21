@@ -42,9 +42,10 @@ load-frame compliance test.
 - Complete audit table showing every correction component.
 - Optional toe exclusion and minimum monotonic reconstruction.
 - 0.2% offset proof stress or another user-defined offset.
+- Mode-specific tensile and compression property analysis.
 - Engineering-to-true conversion using mode-appropriate equations.
 - Volumetric work integration.
-- Corrected CSV, audit CSV, JSON summary, PNG, and vector PDF output.
+- Corrected CSV, property and audit CSVs, JSON summary, and IEEE-style figures.
 - Synthetic tests and GitHub Actions continuous integration.
 
 ## Installation
@@ -108,6 +109,33 @@ The graph selection is an analysis aid: use a visibly linear, pre-yield region
 after initial platen seating or grip take-up. The software still treats the
 target modulus as an external assumption, not as a measured result.
 
+## Corrected-data analysis
+
+For **tensile tests**, the property table reports 0.1% and 0.2% proof stress,
+ultimate tensile strength, engineering strain at UTS, terminal stress and
+strain, modulus of resilience, and toughness to the end of the recorded curve.
+The terminal strain is not labelled fracture strain unless the supplied record
+is known to end at fracture. True tensile stress remains valid only before
+necking unless instantaneous area is measured.
+
+For **compression tests**, the property table reports 0.2% proof stress,
+stress at 1%, 2%, 5%, 10%, and 20% corrected strain when those strains are
+present, maximum and terminal compressive stress, strain at maximum stress, and
+energy absorbed to the end of the record. These values do not correct for
+barreling, friction, or specimen instability.
+
+The exported `mechanical_properties.csv` provides a compact property table for
+further statistical analysis.
+
+## IEEE figures
+
+SciencePlots' `science` and `ieee` styles are used for exported figures by
+default. Exports include a vector PDF, a 600 dpi PNG, and a 600 dpi TIFF. Final
+publication rendering uses LaTeX and therefore requires MiKTeX or TeX Live. If
+LaTeX is unavailable, the software emits a warning and visibly marks the
+no-LaTeX IEEE rendering as a draft. The interactive GUI uses the no-LaTeX IEEE
+style to keep redraws responsive.
+
 ### Command line
 
 Compression using a TOML configuration:
@@ -139,12 +167,14 @@ Run `mechtest-correct --help` for all options.
 Each run creates:
 
 - `corrected_curve.csv`: usable corrected engineering and true curve.
+- `mechanical_properties.csv`: mode-specific corrected-data properties.
 - `correction_audit.csv`: original rows, normalized data, removed compliance,
   toe correction, inclusion status, and monotonic adjustment.
 - `summary.json`: assumptions, fitted values, proof stress, terminal values,
   work density, and warnings.
 - `stress_strain_comparison.png`: high-resolution review figure.
 - `stress_strain_comparison.pdf`: vector figure.
+- `stress_strain_comparison.tiff`: 600 dpi publication raster.
 
 ## Sign and unit conventions
 

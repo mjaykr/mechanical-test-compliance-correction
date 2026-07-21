@@ -19,6 +19,7 @@ from .cli import write_outputs
 from .correction import correct_curve
 from .io import numeric_column_names, read_data_table
 from .models import CorrectionConfig, CorrectionResult
+from .plotting import configure_ieee_style
 
 
 def config_from_values(values: Mapping[str, str]) -> CorrectionConfig:
@@ -98,6 +99,7 @@ class CorrectionApp:
     )
 
     def __init__(self, root: Tk) -> None:
+        configure_ieee_style(use_latex=False)
         self.root = root
         self.root.title("Mechanical Test Compliance Correction")
         self.root.geometry("1050x720")
@@ -529,12 +531,25 @@ class CorrectionApp:
         if self.result is None:
             return
         for key, value in self.result.summary.items():
+            if key == "mechanical_properties":
+                parent = self.summary.insert(
+                    "", "end", text=f"{self.result.config.mode.title()} analysis"
+                )
+                for item in value.values():
+                    display = (
+                        "not available"
+                        if item["value"] is None
+                        else f"{float(item['value']):.6g} {item['unit']}"
+                    )
+                    self.summary.insert(
+                        parent, "end", text=str(item["label"]), values=(display,)
+                    )
             if key == "caveats":
                 for index, caveat in enumerate(value, start=1):
                     self.summary.insert(
                         "", "end", text=f"Caveat {index}", values=(caveat,)
                     )
-            else:
+            elif key != "mechanical_properties":
                 self.summary.insert(
                     "", "end", text=key.replace("_", " "), values=(value,)
                 )

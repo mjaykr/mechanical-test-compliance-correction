@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mechtest-compliance-correction"
-version = "0.2.0"
+version = "0.3.0"
 description = "Auditable modulus-targeted compliance correction for tensile and compression stress-strain data"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -34,6 +34,7 @@ dependencies = [
   "numpy>=1.24",
   "openpyxl>=3.1",
   "pandas>=2.0",
+  "scienceplots>=2.1",
 ]
 
 [project.optional-dependencies]
@@ -42,9 +43,7 @@ dev = [
   "pytest-cov>=5",
   "ruff>=0.9",
 ]
-publication = [
-  "scienceplots>=2.1",
-]
+publication = []
 
 [project.scripts]
 mechtest-correct = "mechtest_correction.cli:main"

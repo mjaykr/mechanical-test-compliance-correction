@@ -7,6 +7,7 @@ from pathlib import Path
 
 import tomllib
 
+from .analysis import properties_frame
 from .correction import correct_curve
 from .io import read_curve
 from .models import CorrectionConfig
@@ -56,8 +57,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--publication-style",
-        action="store_true",
-        help="Use the optional SciencePlots IEEE style",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use SciencePlots IEEE style (enabled by default)",
     )
     return parser
 
@@ -146,13 +148,16 @@ def run(args: argparse.Namespace) -> dict[str, object]:
 
 
 def write_outputs(
-    result, output_dir: Path, *, input_file: Path, publication_style: bool = False
+    result, output_dir: Path, *, input_file: Path, publication_style: bool = True
 ) -> dict[str, object]:
     """Write standard correction artifacts and return the run summary."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
     result.audit.to_csv(output_dir / "correction_audit.csv", index=False)
     result.corrected_curve.to_csv(output_dir / "corrected_curve.csv", index=False)
+    properties_frame(result.summary["mechanical_properties"]).to_csv(
+        output_dir / "mechanical_properties.csv", index=False
+    )
     summary = dict(result.summary)
     summary["input_file"] = str(input_file.resolve())
     summary["correction_equation"] = (

@@ -5,6 +5,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from .analysis import calculate_mechanical_properties
 from .io import normalize_units, sign_factor
 from .models import CorrectionConfig, CorrectionResult
 
@@ -265,6 +266,11 @@ def correct_curve(frame: pd.DataFrame, config: CorrectionConfig) -> CorrectionRe
         "absorbed_energy_to_end_MJ_per_m3": float(cumulative_work[-1]),
         "caveats": caveats,
     }
+    summary["mechanical_properties"] = calculate_mechanical_properties(
+        curve,
+        mode=config.mode,
+        modulus_mpa=config.target_modulus_mpa,
+    )
     return CorrectionResult(
         config=config, audit=audit, corrected_curve=curve, summary=summary
     )

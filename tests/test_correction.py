@@ -42,6 +42,23 @@ def test_offset_proof_stress_is_recovered(synthetic_curve):
     assert result.summary["proof_stress_MPa"] == pytest.approx(408.0, abs=0.2)
 
 
+def test_tensile_properties_are_reported(synthetic_curve):
+    frame, _, _ = synthetic_curve
+    result = correct_curve(frame, make_config("tension"))
+    properties = result.summary["mechanical_properties"]
+    assert properties["proof_stress_0_2pct"]["value"] == pytest.approx(408.0, abs=0.2)
+    assert properties["ultimate_tensile_strength"]["value"] == 1000.0
+    assert properties["toughness_to_end"]["value"] > 0.0
+
+
+def test_compression_properties_include_specified_strains(synthetic_curve):
+    frame, _, _ = synthetic_curve
+    result = correct_curve(frame, make_config("compression"))
+    properties = result.summary["mechanical_properties"]
+    assert properties["stress_at_1pct_strain"]["value"] is not None
+    assert properties["maximum_compressive_stress"]["value"] == 1000.0
+
+
 @pytest.mark.parametrize("mode", ["tension", "compression"])
 def test_true_conversion(mode, synthetic_curve):
     frame, _, _ = synthetic_curve
