@@ -12,7 +12,12 @@ from .analysis import flow_fit_data_frame, flow_models_frame, properties_frame
 from .correction import correct_curve
 from .io import read_curve
 from .models import CorrectionConfig
-from .plotting import plot_comparison, plot_corrected_analysis, plot_work_hardening
+from .plotting import (
+    plot_comparison,
+    plot_corrected_analysis,
+    plot_wha_model_panels,
+    plot_work_hardening,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -166,6 +171,27 @@ def write_outputs(result, output_dir: Path, *, input_file: Path) -> dict[str, ob
             if not isinstance(value, (dict, list))
         ]
     ).to_csv(output_dir / "work_hardening_summary.csv", index=False)
+    advanced = (
+        ("hall_petch", result.hall_petch, "hall_petch_analysis"),
+        (
+            "dislocation_density",
+            result.dislocation_density,
+            "dislocation_density_analysis",
+        ),
+        ("micromechanical", result.micromechanical, "micromechanical_analysis"),
+    )
+    for stem, data, summary_key in advanced:
+        if data is None or data.empty:
+            continue
+        data.to_csv(output_dir / f"{stem}_data.csv", index=False)
+        model_summary = result.summary.get(summary_key, {})
+        pd.DataFrame(
+            [
+                {"metric": key, "value": value}
+                for key, value in model_summary.items()
+                if not isinstance(value, (dict, list))
+            ]
+        ).to_csv(output_dir / f"{stem}_summary.csv", index=False)
     summary = dict(result.summary)
     summary["input_file"] = str(input_file.resolve())
     summary["correction_equation"] = (
@@ -177,6 +203,7 @@ def write_outputs(result, output_dir: Path, *, input_file: Path) -> dict[str, ob
     plot_comparison(result, output_dir)
     plot_corrected_analysis(result, output_dir)
     plot_work_hardening(result, output_dir)
+    plot_wha_model_panels(result, output_dir)
     return summary
 
 

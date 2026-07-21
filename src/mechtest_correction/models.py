@@ -59,3 +59,6 @@ class CorrectionResult:
     corrected_curve: pd.DataFrame
     summary: dict[str, object]
     work_hardening: pd.DataFrame | None = None
+    hall_petch: pd.DataFrame | None = None
+    dislocation_density: pd.DataFrame | None = None
+    micromechanical: pd.DataFrame | None = None

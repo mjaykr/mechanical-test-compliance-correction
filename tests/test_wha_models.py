@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from mechtest_correction import CorrectionConfig, correct_curve
+from mechtest_correction.cli import write_outputs
+from mechtest_correction.plot_registry import PLOT_SPECS, plot_data
+from mechtest_correction.publication import export_ieee_plot, panel_data
+from mechtest_correction.wha_models import (
+    DislocationConfig,
+    MicromechanicalConfig,
+    MicrostructureConfig,
+    analyze_dislocation_density,
+    analyze_hall_petch,
+    analyze_micromechanics,
+)
+
+
+@pytest.fixture
+def wha_result(synthetic_curve):
+    frame, _, _ = synthetic_curve
+    result = correct_curve(
+        frame,
+        CorrectionConfig(
+            mode="tension",
+            target_modulus_mpa=200_000.0,
+            fit_axis="stress",
+            fit_min=100.0,
+            fit_max=300.0,
+        ),
+    )
+    result.hall_petch, hp = analyze_hall_petch(result, MicrostructureConfig())
+    result.dislocation_density, density = analyze_dislocation_density(
+        result, DislocationConfig()
+    )
+    result.micromechanical, micromechanical = analyze_micromechanics(
+        result, MicromechanicalConfig()
+    )
+    result.summary["hall_petch_analysis"] = hp
+    result.summary["dislocation_density_analysis"] = density
+    result.summary["micromechanical_analysis"] = micromechanical
+    return result
+
+
+def test_hall_petch_is_a_traceable_projection(wha_result):
+    summary = wha_result.summary["hall_petch_analysis"]
+    total = (
+        summary["base_stress_MPa"]
+        + summary["W_Hall_Petch_contribution_MPa"]
+        + summary["matrix_Hall_Petch_contribution_MPa"]
+    )
+    assert summary["predicted_yield_stress_MPa"] == pytest.approx(total)
+    assert "not a Hall-Petch regression" in summary["caveat"]
+    assert len(wha_result.hall_petch) == 240
+
+
+def test_dislocation_model_reports_positive_apparent_density(wha_result):
+    data = wha_result.dislocation_density
+    summary = wha_result.summary["dislocation_density_analysis"]
+    assert summary["status"] == "ok"
+    assert (data["apparent_dislocation_density_m-2"] > 0.0).all()
+    assert np.isfinite(data["KM_fitted_true_stress_MPa"]).all()
+    assert summary["KM_storage_k1_m-1"] > 0.0
+    assert "effective apparent composite density" in summary["caveat"]
+
+
+def test_micromechanical_bounds_and_moduli_are_ordered(wha_result):
+    data = wha_result.micromechanical
+    summary = wha_result.summary["micromechanical_analysis"]
+    assert summary["Reuss_modulus_GPa"] < summary["Hill_modulus_GPa"]
+    assert summary["Hill_modulus_GPa"] < summary["Voigt_modulus_GPa"]
+    assert (data["Reuss_stress_MPa"] <= data["Voigt_stress_MPa"] + 1.0e-9).all()
+
+
+def test_registry_exposes_every_plot_and_new_panel_data(wha_result):
+    assert len(PLOT_SPECS) == 11
+    for spec in PLOT_SPECS:
+        assert not plot_data(wha_result, spec.plot_id).empty
+    for panel in ("microstructure", "dislocation", "micromechanical"):
+        assert not panel_data(wha_result, panel).empty
+
+
+def test_individual_plot_ieee_export(tmp_path, wha_result):
+    outputs = export_ieee_plot(
+        wha_result,
+        "dislocation.density",
+        tmp_path / "density_ieee",
+        use_latex=False,
+    )
+    assert all(path.is_file() for path in outputs)
+
+
+def test_complete_export_includes_wha_analysis_artifacts(tmp_path, wha_result):
+    source = tmp_path / "source.csv"
+    source.write_text("strain,stress\n0,0\n", encoding="utf-8")
+    output = tmp_path / "results"
+    write_outputs(wha_result, output, input_file=source)
+    expected = {
+        "hall_petch_data.csv",
+        "hall_petch_summary.csv",
+        "dislocation_density_data.csv",
+        "dislocation_density_summary.csv",
+        "micromechanical_data.csv",
+        "micromechanical_summary.csv",
+        "microstructure_hall_petch.png",
+        "microstructure_hall_petch.pdf",
+        "dislocation_density.png",
+        "dislocation_density.pdf",
+        "wha_two_phase.png",
+        "wha_two_phase.pdf",
+    }
+    assert expected <= {path.name for path in output.iterdir()}

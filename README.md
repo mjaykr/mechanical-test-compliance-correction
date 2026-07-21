@@ -45,6 +45,10 @@ load-frame compliance test.
 - Mode-specific tensile and compression property analysis.
 - Engineering-to-true conversion using mode-appropriate equations.
 - Volumetric work integration.
+- Stable registry for 11 independently exportable scientific plots.
+- Two-phase Hall-Petch projection with explicit W and matrix contributions.
+- Effective Taylor dislocation density and Kocks-Mecking density evolution.
+- WHA Voigt-Reuss-Hill load-sharing bounds with separate phase properties.
 - Corrected CSV, property/model/audit CSVs, JSON summary, and Matplotlib figures.
 - Synthetic tests and GitHub Actions continuous integration.
 
@@ -93,7 +97,7 @@ the same audit CSV, corrected curve, JSON summary, and figures as the command-
 line tool. It proposes column mappings automatically and lets you select a
 different pair when the machine export contains additional channels.
 
-The interactive workflow is arranged in seven tabs:
+The interactive workflow is arranged in ten tabs:
 
 1. **Import** previews up to 100 rows, identifies numeric columns, proposes a
    strain/stress or extension/load mapping, and lets you correct that mapping.
@@ -107,7 +111,14 @@ The interactive workflow is arranged in seven tabs:
 5. **Constitutive assessment** compares post-yield flow-law fits and parameters.
 6. **Work hardening** plots Kocks–Mecking `theta(sigma)` and `theta(epsilon_p)`,
    with derivative smoothing and data-driven stage segmentation.
-7. **Export** saves the complete audit outputs and an `analysis_settings.json`
+7. **Microstructure & Hall-Petch** projects separate W-grain and matrix-grain
+   strengthening contributions from user-supplied microstructural parameters.
+8. **Dislocation density** converts the post-yield curve to an effective Taylor
+   density and fits a Kocks-Mecking storage-recovery evolution law.
+9. **WHA two-phase model** compares the measured response with bilinear
+   Voigt, Reuss, and Hill load-sharing estimates using separate BCC W and FCC
+   matrix properties.
+10. **Export** saves the complete audit outputs and an `analysis_settings.json`
    file. Settings can also be saved and reloaded independently.
 
 The graph selection is an analysis aid: use a visibly linear, pre-yield region
@@ -180,15 +191,69 @@ and localization. The implementation follows the classic
 the experimental definition used in this
 [Kocks–Mecking steel study](https://doi.org/10.1016/j.msea.2013.03.044).
 
+## Microstructure and Hall-Petch projection
+
+The microstructure panel evaluates the supplied relation
+
+```text
+sigma_y = sigma_base + f_W k_W / sqrt(d_W) + (1 - f_W) k_matrix / sqrt(d_matrix)
+```
+
+and displays the W and matrix contributions separately. Grain sizes are entered
+in micrometres, phase fraction is volumetric, and both Hall-Petch coefficients
+remain editable. The result is deliberately called a **projection**, not a fit:
+one stress-strain curve cannot identify Hall-Petch intercepts or coefficients.
+A regression requires multiple independently characterized specimens spanning
+grain size while controlling composition, porosity, contiguity, and processing.
+
+WHA strength and ductility depend on W content, interfaces, contiguity, and
+manufacturing condition as well as grain size; see the experimental
+[W-Ni-Fe structural study](https://doi.org/10.1016/S0921-5093(00)01369-1).
+The starting values in the GUI are editable analysis assumptions, not certified
+constants for a particular alloy batch.
+
+## Dislocation-density model
+
+The density panel applies the effective Taylor relation
+
+```text
+sigma = sigma_0 + M alpha mu b sqrt(rho)
+```
+
+to the corrected post-yield flow curve. It then fits the Kocks-Mecking evolution
+law `d rho / d epsilon_p = k1 sqrt(rho) - k2 rho`, reporting storage, recovery,
+saturation density, and stress-reconstruction error. The result is labelled
+**effective apparent composite density** because a macroscopic WHA curve cannot
+separate dislocations in BCC W from those in the FCC Ni-Fe-W matrix. Absolute
+interpretation requires independently supported `M`, `alpha`, `mu`, `b`, and
+`sigma_0`, preferably with XRD, EBSD, or TEM calibration. The model direction is
+consistent with experimentally validated dislocation-mediated modelling of
+[polycrystalline tungsten](https://doi.org/10.1016/j.jmps.2015.08.015).
+
+## WHA two-phase micromechanics
+
+The WHA panel treats tungsten grains and the matrix as separate bilinear phases.
+It plots their assumed responses and compares measured engineering stress with
+Voigt (iso-strain), Reuss (iso-stress), and Hill-average load-sharing estimates.
+It also reports the corresponding elastic moduli and curve RMSE values.
+
+These are transparent one-dimensional bounds, not interface-resolved crystal
+plasticity. They are useful for sensitivity analysis and detecting inconsistent
+phase assumptions. Physical calibration should use measured phase properties;
+more advanced two-phase WHA formulations are described by
+[Lu, Gao, and Ke](https://doi.org/10.1016/j.msea.2013.11.007) and recent
+[W/matrix interface modelling](https://doi.org/10.1016/j.ijplas.2024.104156).
+
 ## Plot-data and IEEE export
 
-Each of the three analysis panels has an **Export plot data** button and an
-**Export IEEE figure** button. Live GUI plots use standard Matplotlib. IEEE
-export alone loads SciencePlots' `science` and `ieee` styles, enables LaTeX, and
-creates a vector PDF plus 600 dpi PNG and TIFF files. The exact plotted data are
-saved beside the figure as CSV. MiKTeX, TeX Live, or MacTeX is required for
-final IEEE export; the application reports an error rather than silently
-substituting a non-LaTeX final figure.
+Every analysis panel now uses a stable plot registry. Select any individual
+subplot and use **Plot data** or **Plot IEEE**, or export the complete panel with
+**Panel data** or **Panel IEEE**. Live GUI plots use standard Matplotlib. IEEE
+export alone loads SciencePlots' `science` and `ieee` styles, keeps LaTeX
+enabled, and creates a vector PDF plus 600 dpi PNG and TIFF files. The exact
+registered plot data are saved beside the figure as CSV. MiKTeX, TeX Live, or
+MacTeX is required for final IEEE export; the application reports an error
+rather than silently substituting a non-LaTeX final figure.
 
 ### Command line
 
@@ -226,6 +291,12 @@ Each run creates:
 - `flow_fit_data.csv`: experimental true flow curve and model predictions.
 - `work_hardening_data.csv`: true stress, plastic strain, theta, and stage.
 - `work_hardening_summary.csv`: smoothing, stage boundaries, and Stage III fit.
+- `hall_petch_data.csv` and `hall_petch_summary.csv`: grain-size projection and
+  strengthening decomposition when the GUI analysis has been calculated.
+- `dislocation_density_data.csv` and `dislocation_density_summary.csv`:
+  apparent density, Kocks-Mecking prediction, parameters, and caveats.
+- `micromechanical_data.csv` and `micromechanical_summary.csv`: phase responses,
+  load-sharing bounds, effective moduli, and RMSE.
 - `correction_audit.csv`: original rows, normalized data, removed compliance,
   toe correction, inclusion status, and monotonic adjustment.
 - `summary.json`: assumptions, fitted values, proof stress, terminal values,
@@ -236,6 +307,8 @@ Each run creates:
 - `corrected_data_analysis.pdf`: vector version of the analysis panels.
 - `work_hardening_analysis.png`: Kocks–Mecking and theta-evolution panels.
 - `work_hardening_analysis.pdf`: vector work-hardening figure.
+- `microstructure_hall_petch.*`, `dislocation_density.*`, and
+  `wha_two_phase.*`: normal GUI/batch review figures when those analyses exist.
 
 ## Sign and unit conventions
 

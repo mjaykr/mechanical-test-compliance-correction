@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mechtest-compliance-correction"
-version = "0.5.0"
+version = "0.6.0"
 description = "Auditable modulus-targeted compliance correction for tensile and compression stress-strain data"
 readme = "README.md"
 license = { file = "LICENSE" }

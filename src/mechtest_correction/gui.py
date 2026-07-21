@@ -20,13 +20,25 @@ from .cli import write_outputs
 from .correction import correct_curve
 from .io import numeric_column_names, read_data_table
 from .models import CorrectionConfig, CorrectionResult
+from .plot_registry import get_plot_spec, plot_data, plots_for_panel
 from .plotting import (
     configure_plot_style,
     draw_constitutive_assessment,
+    draw_dislocation_panel,
+    draw_hall_petch_panel,
     draw_macroscopic_response,
+    draw_micromechanical_panel,
     draw_work_hardening,
 )
-from .publication import export_ieee_panel, panel_data
+from .publication import export_ieee_panel, export_ieee_plot, panel_data
+from .wha_models import (
+    DislocationConfig,
+    MicromechanicalConfig,
+    MicrostructureConfig,
+    analyze_dislocation_density,
+    analyze_hall_petch,
+    analyze_micromechanics,
+)
 from .work_hardening import analyze_work_hardening
 
 
@@ -87,7 +99,7 @@ def prepare_curve(table: pd.DataFrame, values: Mapping[str, str]) -> pd.DataFram
 
 
 class CorrectionApp:
-    """Seven-stage workflow from import through work-hardening assessment."""
+    """Ten-stage workflow from import through WHA micromechanics."""
 
     SETTINGS_KEYS = (
         "data_basis",
@@ -102,6 +114,23 @@ class CorrectionApp:
         "yield_offset_percent",
         "flow_fit_end",
         "smoothing_window",
+        "w_volume_fraction",
+        "w_grain_size_um",
+        "matrix_grain_size_um",
+        "hp_base_stress_mpa",
+        "hp_w_k",
+        "hp_matrix_k",
+        "taylor_factor",
+        "dislocation_alpha",
+        "shear_modulus_gpa",
+        "burgers_vector_nm",
+        "friction_stress_mpa",
+        "w_modulus_gpa",
+        "matrix_modulus_gpa",
+        "w_yield_mpa",
+        "matrix_yield_mpa",
+        "w_hardening_mpa",
+        "matrix_hardening_mpa",
         "strain_unit",
         "stress_unit",
         "strain_sign",
@@ -117,12 +146,13 @@ class CorrectionApp:
         configure_plot_style()
         self.root = root
         self.root.title("Mechanical Test Compliance Correction")
-        self.root.geometry("1150x820")
-        self.root.minsize(950, 680)
+        self.root.geometry("1400x900")
+        self.root.minsize(1100, 720)
         self.table: pd.DataFrame | None = None
         self.curve: pd.DataFrame | None = None
         self.result: CorrectionResult | None = None
         self.values = self._initial_values()
+        self.plot_selections: dict[str, StringVar] = {}
         self.auto_preview = BooleanVar(value=True)
         self.status = StringVar(value="Import a test-data file to begin.")
         self.metric_text = StringVar(value="No correction preview available.")
@@ -144,6 +174,23 @@ class CorrectionApp:
             "yield_offset_percent": StringVar(value="0.2"),
             "flow_fit_end": StringVar(value="peak"),
             "smoothing_window": StringVar(value="51"),
+            "w_volume_fraction": StringVar(value="0.90"),
+            "w_grain_size_um": StringVar(value="30"),
+            "matrix_grain_size_um": StringVar(value="8"),
+            "hp_base_stress_mpa": StringVar(value="300"),
+            "hp_w_k": StringVar(value="810"),
+            "hp_matrix_k": StringVar(value="350"),
+            "taylor_factor": StringVar(value="2.75"),
+            "dislocation_alpha": StringVar(value="0.30"),
+            "shear_modulus_gpa": StringVar(value="161"),
+            "burgers_vector_nm": StringVar(value="0.274"),
+            "friction_stress_mpa": StringVar(value="300"),
+            "w_modulus_gpa": StringVar(value="411"),
+            "matrix_modulus_gpa": StringVar(value="200"),
+            "w_yield_mpa": StringVar(value="750"),
+            "matrix_yield_mpa": StringVar(value="350"),
+            "w_hardening_mpa": StringVar(value="1500"),
+            "matrix_hardening_mpa": StringVar(value="900"),
             "strain_unit": StringVar(value="fraction"),
             "stress_unit": StringVar(value="MPa"),
             "strain_sign": StringVar(value="auto"),
@@ -165,6 +212,9 @@ class CorrectionApp:
         self.corrected_analysis_tab = ttk.Frame(self.notebook, padding=8)
         self.constitutive_tab = ttk.Frame(self.notebook, padding=8)
         self.work_hardening_tab = ttk.Frame(self.notebook, padding=8)
+        self.microstructure_tab = ttk.Frame(self.notebook, padding=8)
+        self.dislocation_tab = ttk.Frame(self.notebook, padding=8)
+        self.micromechanical_tab = ttk.Frame(self.notebook, padding=8)
         self.export_tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.import_tab, text="1  Import")
         self.notebook.add(self.setup_tab, text="2  Test setup")
@@ -172,13 +222,21 @@ class CorrectionApp:
         self.notebook.add(self.corrected_analysis_tab, text="4  Macroscopic response")
         self.notebook.add(self.constitutive_tab, text="5  Constitutive assessment")
         self.notebook.add(self.work_hardening_tab, text="6  Work hardening")
-        self.notebook.add(self.export_tab, text="7  Export")
+        self.notebook.add(
+            self.microstructure_tab, text="7  Microstructure & Hall-Petch"
+        )
+        self.notebook.add(self.dislocation_tab, text="8  Dislocation density")
+        self.notebook.add(self.micromechanical_tab, text="9  WHA two-phase model")
+        self.notebook.add(self.export_tab, text="10  Export")
         self._build_import_tab()
         self._build_setup_tab()
         self._build_analyze_tab()
         self._build_corrected_analysis_tab()
         self._build_constitutive_tab()
         self._build_work_hardening_tab()
+        self._build_microstructure_tab()
+        self._build_dislocation_tab()
+        self._build_micromechanical_tab()
         self._build_export_tab()
         ttk.Label(shell, textvariable=self.status).pack(fill="x", pady=(7, 0))
 
@@ -483,17 +541,161 @@ class CorrectionApp:
         self.hardening_summary.column("value", width=480)
         self.hardening_summary.grid(row=0, column=0, sticky="nsew")
 
+    def _build_dual_model_panel(
+        self,
+        tab: ttk.Frame,
+        *,
+        fields: tuple[tuple[str, str], ...],
+        recalculate,
+        panel: str,
+        default_stem: str,
+    ):
+        """Build a compact parameter area, dual plot, and summary table."""
+
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(1, weight=1)
+        top = ttk.Frame(tab)
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        inputs = ttk.Frame(top)
+        inputs.pack(side="left", fill="x", expand=True)
+        for index, (label, name) in enumerate(fields):
+            row, group = divmod(index, 4)
+            column = 2 * group
+            ttk.Label(inputs, text=label).grid(row=row, column=column, sticky="w")
+            ttk.Entry(inputs, textvariable=self.values[name], width=9).grid(
+                row=row, column=column + 1, padx=(3, 10), pady=2
+            )
+        actions = ttk.Frame(top)
+        actions.pack(side="right")
+        ttk.Button(actions, text="Recalculate", command=recalculate).pack(
+            side="left", padx=4
+        )
+        self._panel_export_buttons(actions, panel, default_stem)
+
+        content = ttk.PanedWindow(tab, orient="vertical")
+        content.grid(row=1, column=0, sticky="nsew")
+        plot_frame = ttk.Frame(content)
+        summary_frame = ttk.Frame(content)
+        content.add(plot_frame, weight=4)
+        content.add(summary_frame, weight=1)
+        plot_frame.columnconfigure(0, weight=1)
+        plot_frame.rowconfigure(0, weight=1)
+        figure = Figure(figsize=(10, 5), dpi=100, constrained_layout=True)
+        axes = (figure.add_subplot(121), figure.add_subplot(122))
+        canvas = FigureCanvasTkAgg(figure, master=plot_frame)
+        canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+        toolbar_frame = ttk.Frame(plot_frame)
+        toolbar_frame.grid(row=1, column=0, sticky="ew")
+        toolbar = NavigationToolbar2Tk(canvas, toolbar_frame, pack_toolbar=False)
+        toolbar.update()
+        toolbar.pack(side="left")
+        canvas.draw_idle()
+        summary_frame.columnconfigure(0, weight=1)
+        summary_frame.rowconfigure(0, weight=1)
+        summary = ttk.Treeview(
+            summary_frame, columns=("value",), show="tree headings", height=6
+        )
+        summary.heading("#0", text="Metric")
+        summary.heading("value", text="Value")
+        summary.column("#0", width=390)
+        summary.column("value", width=510)
+        summary.grid(row=0, column=0, sticky="nsew")
+        return figure, axes, canvas, summary
+
+    def _build_microstructure_tab(self) -> None:
+        (
+            self.hp_figure,
+            self.hp_axes,
+            self.hp_canvas,
+            self.hp_summary,
+        ) = self._build_dual_model_panel(
+            self.microstructure_tab,
+            fields=(
+                ("W volume fraction", "w_volume_fraction"),
+                ("W grain (µm)", "w_grain_size_um"),
+                ("Matrix grain (µm)", "matrix_grain_size_um"),
+                ("Base stress (MPa)", "hp_base_stress_mpa"),
+                ("W k (MPa√µm)", "hp_w_k"),
+                ("Matrix k", "hp_matrix_k"),
+            ),
+            recalculate=self._recalculate_microstructure,
+            panel="microstructure",
+            default_stem="microstructure_hall_petch",
+        )
+
+    def _build_dislocation_tab(self) -> None:
+        (
+            self.dislocation_figure,
+            self.dislocation_axes,
+            self.dislocation_canvas,
+            self.dislocation_summary,
+        ) = self._build_dual_model_panel(
+            self.dislocation_tab,
+            fields=(
+                ("Taylor factor M", "taylor_factor"),
+                ("Interaction α", "dislocation_alpha"),
+                ("Shear modulus (GPa)", "shear_modulus_gpa"),
+                ("Burgers vector (nm)", "burgers_vector_nm"),
+                ("Friction stress (MPa)", "friction_stress_mpa"),
+            ),
+            recalculate=self._recalculate_dislocation,
+            panel="dislocation",
+            default_stem="dislocation_density",
+        )
+
+    def _build_micromechanical_tab(self) -> None:
+        (
+            self.micromechanical_figure,
+            self.micromechanical_axes,
+            self.micromechanical_canvas,
+            self.micromechanical_summary,
+        ) = self._build_dual_model_panel(
+            self.micromechanical_tab,
+            fields=(
+                ("W volume fraction", "w_volume_fraction"),
+                ("W modulus (GPa)", "w_modulus_gpa"),
+                ("Matrix modulus (GPa)", "matrix_modulus_gpa"),
+                ("W yield (MPa)", "w_yield_mpa"),
+                ("Matrix yield (MPa)", "matrix_yield_mpa"),
+                ("W tangent (MPa)", "w_hardening_mpa"),
+                ("Matrix tangent (MPa)", "matrix_hardening_mpa"),
+            ),
+            recalculate=self._recalculate_micromechanics,
+            panel="micromechanical",
+            default_stem="wha_two_phase",
+        )
+
     def _panel_export_buttons(
         self, parent: ttk.Frame, panel: str, default_stem: str
     ) -> None:
+        specs = plots_for_panel(panel)
+        selection = StringVar(value=specs[0].label)
+        self.plot_selections[panel] = selection
+        ttk.Combobox(
+            parent,
+            textvariable=selection,
+            values=[spec.label for spec in specs],
+            state="readonly",
+            width=25,
+        ).pack(side="right", padx=(8, 2))
         ttk.Button(
             parent,
-            text="Export plot data…",
+            text="Plot data…",
+            command=lambda: self._export_individual_data(panel),
+        ).pack(side="right", padx=2)
+        ttk.Button(
+            parent,
+            text="Plot IEEE…",
+            command=lambda: self._export_individual_ieee(panel),
+        ).pack(side="right", padx=2)
+        ttk.Button(
+            parent,
+            text="Panel data…",
             command=lambda: self._export_panel_data(panel, default_stem),
         ).pack(side="right", padx=4)
         ttk.Button(
             parent,
-            text="Export IEEE figure…",
+            text="Panel IEEE…",
             command=lambda: self._export_ieee(panel, default_stem),
         ).pack(side="right", padx=4)
 
@@ -666,6 +868,52 @@ class CorrectionApp:
         if self.auto_preview.get():
             self._preview_result(show_errors=False)
 
+    def _microstructure_config(self) -> MicrostructureConfig:
+        return MicrostructureConfig(
+            tungsten_grain_size_um=float(self.values["w_grain_size_um"].get()),
+            matrix_grain_size_um=float(self.values["matrix_grain_size_um"].get()),
+            tungsten_volume_fraction=float(self.values["w_volume_fraction"].get()),
+            base_stress_mpa=float(self.values["hp_base_stress_mpa"].get()),
+            tungsten_k_mpa_sqrt_um=float(self.values["hp_w_k"].get()),
+            matrix_k_mpa_sqrt_um=float(self.values["hp_matrix_k"].get()),
+        )
+
+    def _dislocation_config(self) -> DislocationConfig:
+        return DislocationConfig(
+            taylor_factor=float(self.values["taylor_factor"].get()),
+            alpha=float(self.values["dislocation_alpha"].get()),
+            shear_modulus_gpa=float(self.values["shear_modulus_gpa"].get()),
+            burgers_vector_nm=float(self.values["burgers_vector_nm"].get()),
+            friction_stress_mpa=float(self.values["friction_stress_mpa"].get()),
+        )
+
+    def _micromechanical_config(self) -> MicromechanicalConfig:
+        return MicromechanicalConfig(
+            tungsten_volume_fraction=float(self.values["w_volume_fraction"].get()),
+            tungsten_modulus_gpa=float(self.values["w_modulus_gpa"].get()),
+            matrix_modulus_gpa=float(self.values["matrix_modulus_gpa"].get()),
+            tungsten_yield_mpa=float(self.values["w_yield_mpa"].get()),
+            matrix_yield_mpa=float(self.values["matrix_yield_mpa"].get()),
+            tungsten_hardening_mpa=float(self.values["w_hardening_mpa"].get()),
+            matrix_hardening_mpa=float(self.values["matrix_hardening_mpa"].get()),
+        )
+
+    def _calculate_wha_models(self) -> None:
+        if self.result is None:
+            return
+        self.result.hall_petch, hp_summary = analyze_hall_petch(
+            self.result, self._microstructure_config()
+        )
+        self.result.dislocation_density, density_summary = analyze_dislocation_density(
+            self.result, self._dislocation_config()
+        )
+        self.result.micromechanical, micro_summary = analyze_micromechanics(
+            self.result, self._micromechanical_config()
+        )
+        self.result.summary["hall_petch_analysis"] = hp_summary
+        self.result.summary["dislocation_density_analysis"] = density_summary
+        self.result.summary["micromechanical_analysis"] = micro_summary
+
     def _preview_result(self, *, show_errors: bool = True) -> None:
         try:
             if self.table is None:
@@ -686,6 +934,7 @@ class CorrectionApp:
                 smoothing_window=int(self.values["smoothing_window"].get()),
             )
             self.result.summary["work_hardening_analysis"] = work_summary
+            self._calculate_wha_models()
             self._plot_result()
             self._show_summary()
         except (RuntimeError, ValueError) as exc:
@@ -759,9 +1008,16 @@ class CorrectionApp:
         self.constitutive_canvas.draw_idle()
         draw_work_hardening(self.hardening_axes, self.result)
         self.hardening_canvas.draw_idle()
+        draw_hall_petch_panel(self.hp_axes, self.result)
+        self.hp_canvas.draw_idle()
+        draw_dislocation_panel(self.dislocation_axes, self.result)
+        self.dislocation_canvas.draw_idle()
+        draw_micromechanical_panel(self.micromechanical_axes, self.result)
+        self.micromechanical_canvas.draw_idle()
         self._show_macroscopic_properties()
         self._show_model_table()
         self._show_hardening_summary()
+        self._show_science_summaries()
 
     def _show_macroscopic_properties(self) -> None:
         self.macro_property_table.delete(*self.macro_property_table.get_children())
@@ -813,6 +1069,37 @@ class CorrectionApp:
                 "", "end", text=key.replace("_", " "), values=(value,)
             )
 
+    @staticmethod
+    def _fill_summary_table(table: ttk.Treeview, summary: dict[str, object]) -> None:
+        table.delete(*table.get_children())
+        for key, value in summary.items():
+            if key == "inputs" and isinstance(value, dict):
+                parent = table.insert("", "end", text="Inputs", values=("",))
+                for input_key, input_value in value.items():
+                    table.insert(
+                        parent,
+                        "end",
+                        text=input_key.replace("_", " "),
+                        values=(input_value,),
+                    )
+            else:
+                table.insert("", "end", text=key.replace("_", " "), values=(value,))
+
+    def _show_science_summaries(self) -> None:
+        if self.result is None:
+            return
+        self._fill_summary_table(
+            self.hp_summary, self.result.summary.get("hall_petch_analysis", {})
+        )
+        self._fill_summary_table(
+            self.dislocation_summary,
+            self.result.summary.get("dislocation_density_analysis", {}),
+        )
+        self._fill_summary_table(
+            self.micromechanical_summary,
+            self.result.summary.get("micromechanical_analysis", {}),
+        )
+
     def _recalculate_work_hardening(self) -> None:
         if self.result is None:
             messagebox.showwarning(
@@ -833,6 +1120,112 @@ class CorrectionApp:
         draw_work_hardening(self.hardening_axes, self.result)
         self.hardening_canvas.draw_idle()
         self._show_hardening_summary()
+
+    def _require_result(self) -> bool:
+        if self.result is not None:
+            return True
+        messagebox.showwarning(
+            "No corrected data", "Apply the compliance correction first."
+        )
+        return False
+
+    def _recalculate_microstructure(self) -> None:
+        if not self._require_result():
+            return
+        try:
+            assert self.result is not None
+            self.result.hall_petch, summary = analyze_hall_petch(
+                self.result, self._microstructure_config()
+            )
+        except ValueError as exc:
+            messagebox.showerror("Hall-Petch analysis failed", str(exc))
+            return
+        self.result.summary["hall_petch_analysis"] = summary
+        draw_hall_petch_panel(self.hp_axes, self.result)
+        self.hp_canvas.draw_idle()
+        self._fill_summary_table(self.hp_summary, summary)
+
+    def _recalculate_dislocation(self) -> None:
+        if not self._require_result():
+            return
+        try:
+            assert self.result is not None
+            self.result.dislocation_density, summary = analyze_dislocation_density(
+                self.result, self._dislocation_config()
+            )
+        except ValueError as exc:
+            messagebox.showerror("Dislocation analysis failed", str(exc))
+            return
+        self.result.summary["dislocation_density_analysis"] = summary
+        draw_dislocation_panel(self.dislocation_axes, self.result)
+        self.dislocation_canvas.draw_idle()
+        self._fill_summary_table(self.dislocation_summary, summary)
+
+    def _recalculate_micromechanics(self) -> None:
+        if not self._require_result():
+            return
+        try:
+            assert self.result is not None
+            self.result.micromechanical, summary = analyze_micromechanics(
+                self.result, self._micromechanical_config()
+            )
+        except ValueError as exc:
+            messagebox.showerror("Micromechanical analysis failed", str(exc))
+            return
+        self.result.summary["micromechanical_analysis"] = summary
+        draw_micromechanical_panel(self.micromechanical_axes, self.result)
+        self.micromechanical_canvas.draw_idle()
+        self._fill_summary_table(self.micromechanical_summary, summary)
+
+    def _selected_plot_id(self, panel: str) -> str:
+        selected = self.plot_selections[panel].get()
+        return next(
+            spec.plot_id for spec in plots_for_panel(panel) if spec.label == selected
+        )
+
+    def _export_individual_data(self, panel: str) -> None:
+        if not self._require_result():
+            return
+        assert self.result is not None
+        plot_id = self._selected_plot_id(panel)
+        spec = get_plot_spec(plot_id)
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            initialfile=f"{spec.default_stem}_data.csv",
+            filetypes=[("CSV data", "*.csv")],
+        )
+        if not path:
+            return
+        data = plot_data(self.result, plot_id)
+        if data.empty:
+            messagebox.showerror(
+                "No plot data", f"No data are available for {spec.label}."
+            )
+            return
+        data.to_csv(path, index=False)
+        self.status.set(f"Individual plot data exported to {path}")
+
+    def _export_individual_ieee(self, panel: str) -> None:
+        if not self._require_result():
+            return
+        assert self.result is not None
+        plot_id = self._selected_plot_id(panel)
+        spec = get_plot_spec(plot_id)
+        path = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            initialfile=f"{spec.default_stem}.pdf",
+            filetypes=[("PDF base name", "*.pdf")],
+        )
+        if not path:
+            return
+        try:
+            outputs = export_ieee_plot(
+                self.result, plot_id, Path(path).with_suffix(""), use_latex=True
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            messagebox.showerror("IEEE export failed", str(exc))
+            return
+        self.status.set(f"Individual IEEE plot and CSV exported beside {outputs[0]}")
 
     def _export_panel_data(self, panel: str, default_stem: str) -> None:
         if self.result is None:
@@ -911,6 +1304,9 @@ class CorrectionApp:
                 "mechanical_properties",
                 "flow_model_fits",
                 "work_hardening_analysis",
+                "hall_petch_analysis",
+                "dislocation_density_analysis",
+                "micromechanical_analysis",
             }:
                 self.summary.insert(
                     "", "end", text=key.replace("_", " "), values=(value,)
