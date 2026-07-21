@@ -22,6 +22,7 @@ from .plotting import (
     draw_kocks_mecking,
     draw_micromechanical_response,
     draw_phase_response,
+    draw_shpb_view,
     draw_strengthening_contributions,
     draw_true_response,
 )
@@ -102,6 +103,10 @@ def _micromechanical_data(result: CorrectionResult) -> pd.DataFrame:
 
 def _advanced_data(result: CorrectionResult, view: str) -> pd.DataFrame:
     return (result.advanced_wha or {}).get(view, pd.DataFrame()).copy()
+
+
+def _shpb_data(result: CorrectionResult, view: str) -> pd.DataFrame:
+    return (result.high_rate or {}).get(view, pd.DataFrame()).copy()
 
 
 PLOT_SPECS = (
@@ -304,6 +309,36 @@ PLOT_SPECS = (
         partial(_advanced_data, view="two_phase_dislocation"),
         r"True plastic strain, $\varepsilon_p$ (\%)",
         r"Density, $\rho$ ($\mathrm{m}^{-2}$)",
+    ),
+    PlotSpec(
+        "shpb.waves",
+        "shpb",
+        "SHPB wave histories",
+        "shpb_waves_ieee",
+        partial(draw_shpb_view, view="waves"),
+        partial(_shpb_data, view="waves"),
+        r"Time, $t$ (µs)",
+        r"Bar strain ($\mathrm{\mu\varepsilon}$)",
+    ),
+    PlotSpec(
+        "shpb.response",
+        "shpb",
+        "SHPB dynamic response",
+        "shpb_response_ieee",
+        partial(draw_shpb_view, view="response"),
+        partial(_shpb_data, view="response"),
+        r"Specimen strain, $\varepsilon$ (\%)",
+        r"Compression stress, $\sigma$ (MPa)",
+    ),
+    PlotSpec(
+        "shpb.rate_equilibrium",
+        "shpb",
+        "SHPB rate and equilibrium",
+        "shpb_rate_equilibrium_ieee",
+        partial(draw_shpb_view, view="rate_equilibrium"),
+        partial(_shpb_data, view="response"),
+        r"Time, $t$ (µs)",
+        r"Strain rate, $\dot{\varepsilon}$ ($\mathrm{s}^{-1}$)",
     ),
 )
 

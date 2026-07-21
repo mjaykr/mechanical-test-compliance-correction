@@ -150,6 +150,23 @@ def write_outputs(result, output_dir: Path, *, input_file: Path) -> dict[str, ob
     """Write standard correction artifacts and return the run summary."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    if result.corrected_curve.empty and result.high_rate:
+        for view, data in result.high_rate.items():
+            if not data.empty:
+                data.to_csv(output_dir / f"shpb_{view}_data.csv", index=False)
+        summary = dict(result.summary)
+        summary["input_file"] = str(input_file.resolve())
+        (output_dir / "summary.json").write_text(
+            json.dumps(summary, indent=2, allow_nan=False), encoding="utf-8"
+        )
+        pd.DataFrame(
+            [
+                {"metric": key, "value": value}
+                for key, value in result.summary.get("shpb_analysis", {}).items()
+                if not isinstance(value, (dict, list))
+            ]
+        ).to_csv(output_dir / "shpb_summary.csv", index=False)
+        return summary
     result.audit.to_csv(output_dir / "correction_audit.csv", index=False)
     result.corrected_curve.to_csv(output_dir / "corrected_curve.csv", index=False)
     properties_frame(result.summary["mechanical_properties"]).to_csv(
@@ -204,6 +221,18 @@ def write_outputs(result, output_dir: Path, *, input_file: Path) -> dict[str, ob
                 if not isinstance(value, (dict, list))
             ]
         ).to_csv(output_dir / "advanced_wha_summary.csv", index=False)
+    for view, data in (result.high_rate or {}).items():
+        if not data.empty:
+            data.to_csv(output_dir / f"shpb_{view}_data.csv", index=False)
+    shpb_summary = result.summary.get("shpb_analysis", {})
+    if shpb_summary:
+        pd.DataFrame(
+            [
+                {"metric": key, "value": value}
+                for key, value in shpb_summary.items()
+                if not isinstance(value, (dict, list))
+            ]
+        ).to_csv(output_dir / "shpb_summary.csv", index=False)
     summary = dict(result.summary)
     summary["input_file"] = str(input_file.resolve())
     summary["correction_equation"] = (

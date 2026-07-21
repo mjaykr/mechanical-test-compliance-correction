@@ -18,6 +18,7 @@ from matplotlib.widgets import SpanSelector
 from .analysis import fit_flow_models
 from .cli import write_outputs
 from .correction import correct_curve
+from .high_rate import SHPBConfig, analyze_shpb, prepare_shpb_waves
 from .io import numeric_column_names, read_data_table
 from .models import CorrectionConfig, CorrectionResult
 from .plot_registry import get_plot_spec, plot_data, plots_for_panel
@@ -30,6 +31,7 @@ from .plotting import (
     draw_hall_petch_panel,
     draw_macroscopic_response,
     draw_micromechanical_panel,
+    draw_shpb_view,
     draw_work_hardening,
 )
 from .publication import export_ieee_panel, export_ieee_plot, panel_data
@@ -145,6 +147,19 @@ class CorrectionApp:
         "porosity_strength_exponent",
         "w_density_multiplier",
         "matrix_density_multiplier",
+        "shpb_file",
+        "shpb_time_column",
+        "shpb_incident_column",
+        "shpb_reflected_column",
+        "shpb_transmitted_column",
+        "shpb_time_unit",
+        "shpb_bar_modulus_gpa",
+        "shpb_bar_density_kg_m3",
+        "shpb_bar_diameter_mm",
+        "shpb_specimen_diameter_mm",
+        "shpb_specimen_length_mm",
+        "shpb_static_proof_mpa",
+        "shpb_reference_rate_s",
         "strain_unit",
         "stress_unit",
         "strain_sign",
@@ -165,6 +180,7 @@ class CorrectionApp:
         self.table: pd.DataFrame | None = None
         self.curve: pd.DataFrame | None = None
         self.result: CorrectionResult | None = None
+        self.shpb_table: pd.DataFrame | None = None
         self.values = self._initial_values()
         self.plot_selections: dict[str, StringVar] = {}
         self.auto_preview = BooleanVar(value=True)
@@ -215,6 +231,19 @@ class CorrectionApp:
             "porosity_strength_exponent": StringVar(value="1.5"),
             "w_density_multiplier": StringVar(value="1.30"),
             "matrix_density_multiplier": StringVar(value="0.50"),
+            "shpb_file": StringVar(),
+            "shpb_time_column": StringVar(value="time"),
+            "shpb_incident_column": StringVar(value="incident"),
+            "shpb_reflected_column": StringVar(value="reflected"),
+            "shpb_transmitted_column": StringVar(value="transmitted"),
+            "shpb_time_unit": StringVar(value="us"),
+            "shpb_bar_modulus_gpa": StringVar(value="210"),
+            "shpb_bar_density_kg_m3": StringVar(value="7850"),
+            "shpb_bar_diameter_mm": StringVar(value="20"),
+            "shpb_specimen_diameter_mm": StringVar(value="8"),
+            "shpb_specimen_length_mm": StringVar(value="4"),
+            "shpb_static_proof_mpa": StringVar(value="0"),
+            "shpb_reference_rate_s": StringVar(value="0.001"),
             "strain_unit": StringVar(value="fraction"),
             "stress_unit": StringVar(value="MPa"),
             "strain_sign": StringVar(value="auto"),
@@ -240,6 +269,7 @@ class CorrectionApp:
         self.dislocation_tab = ttk.Frame(self.notebook, padding=8)
         self.micromechanical_tab = ttk.Frame(self.notebook, padding=8)
         self.advanced_wha_tab = ttk.Frame(self.notebook, padding=8)
+        self.shpb_tab = ttk.Frame(self.notebook, padding=8)
         self.export_tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.import_tab, text="1  Import")
         self.notebook.add(self.setup_tab, text="2  Test setup")
@@ -253,7 +283,8 @@ class CorrectionApp:
         self.notebook.add(self.dislocation_tab, text="8  Dislocation density")
         self.notebook.add(self.micromechanical_tab, text="9  WHA two-phase model")
         self.notebook.add(self.advanced_wha_tab, text="10  Advanced WHA models")
-        self.notebook.add(self.export_tab, text="11  Export")
+        self.notebook.add(self.shpb_tab, text="11  High strain rate / SHPB")
+        self.notebook.add(self.export_tab, text="12  Export")
         self._build_import_tab()
         self._build_setup_tab()
         self._build_analyze_tab()
@@ -264,6 +295,7 @@ class CorrectionApp:
         self._build_dislocation_tab()
         self._build_micromechanical_tab()
         self._build_advanced_wha_tab()
+        self._build_shpb_tab()
         self._build_export_tab()
         ttk.Label(shell, textvariable=self.status).pack(fill="x", pady=(7, 0))
 
@@ -788,6 +820,113 @@ class CorrectionApp:
         self.advanced_wha_summary.column("value", width=500)
         self.advanced_wha_summary.grid(row=0, column=0, sticky="nsew")
 
+    def _build_shpb_tab(self) -> None:
+        """Build the separate pulse-file workflow for compression SHPB data."""
+
+        tab = self.shpb_tab
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(3, weight=1)
+        source = ttk.LabelFrame(tab, text="SHPB pulse file", padding=6)
+        source.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        source.columnconfigure(1, weight=1)
+        ttk.Label(source, text="File").grid(row=0, column=0, sticky="w")
+        ttk.Entry(source, textvariable=self.values["shpb_file"]).grid(
+            row=0, column=1, sticky="ew", padx=4
+        )
+        ttk.Button(source, text="Browse…", command=self._browse_shpb_file).grid(
+            row=0, column=2
+        )
+        for column, (label, name) in enumerate(
+            (
+                ("Time", "shpb_time_column"),
+                ("Incident", "shpb_incident_column"),
+                ("Reflected", "shpb_reflected_column"),
+                ("Transmitted", "shpb_transmitted_column"),
+                ("Time unit", "shpb_time_unit"),
+            )
+        ):
+            ttk.Label(source, text=label).grid(row=1, column=2 * column, sticky="w")
+            if name == "shpb_time_unit":
+                ttk.Combobox(
+                    source,
+                    textvariable=self.values[name],
+                    values=("s", "ms", "us"),
+                    state="readonly",
+                    width=7,
+                ).grid(row=1, column=2 * column + 1, padx=(3, 7), pady=3)
+            else:
+                ttk.Entry(source, textvariable=self.values[name], width=13).grid(
+                    row=1, column=2 * column + 1, padx=(3, 7), pady=3
+                )
+        parameters = ttk.LabelFrame(tab, text="Bar and specimen inputs", padding=6)
+        parameters.grid(row=1, column=0, sticky="ew", pady=(0, 4))
+        for index, (label, name) in enumerate(
+            (
+                ("Bar E (GPa)", "shpb_bar_modulus_gpa"),
+                ("Bar density (kg/m³)", "shpb_bar_density_kg_m3"),
+                ("Bar diameter (mm)", "shpb_bar_diameter_mm"),
+                ("Specimen diameter (mm)", "shpb_specimen_diameter_mm"),
+                ("Specimen length (mm)", "shpb_specimen_length_mm"),
+                ("Static 0.2% proof (MPa; optional)", "shpb_static_proof_mpa"),
+                ("Reference rate (s⁻¹)", "shpb_reference_rate_s"),
+            )
+        ):
+            ttk.Label(parameters, text=label).grid(
+                row=index // 4, column=2 * (index % 4), sticky="w"
+            )
+            ttk.Entry(parameters, textvariable=self.values[name], width=12).grid(
+                row=index // 4, column=2 * (index % 4) + 1, padx=(3, 10), pady=2
+            )
+        actions = ttk.Frame(tab)
+        actions.grid(row=2, column=0, sticky="w", pady=(0, 4))
+        ttk.Button(
+            actions, text="Load and reduce SHPB", command=self._recalculate_shpb
+        ).pack(side="left")
+        self.plot_selections["shpb"] = StringVar(value=plots_for_panel("shpb")[0].label)
+        picker = ttk.Combobox(
+            actions,
+            textvariable=self.plot_selections["shpb"],
+            values=[item.label for item in plots_for_panel("shpb")],
+            state="readonly",
+            width=28,
+        )
+        picker.pack(side="left", padx=(10, 4))
+        picker.bind("<<ComboboxSelected>>", self._shpb_view_changed)
+        ttk.Button(
+            actions,
+            text="Export selected data…",
+            command=lambda: self._export_individual_data("shpb"),
+        ).pack(side="left", padx=3)
+        ttk.Button(
+            actions,
+            text="Export selected IEEE…",
+            command=lambda: self._export_individual_ieee("shpb"),
+        ).pack(side="left", padx=3)
+        content = ttk.PanedWindow(tab, orient="vertical")
+        content.grid(row=3, column=0, sticky="nsew")
+        plot_frame, summary_frame = ttk.Frame(content), ttk.Frame(content)
+        content.add(plot_frame, weight=4)
+        content.add(summary_frame, weight=1)
+        plot_frame.columnconfigure(0, weight=1)
+        plot_frame.rowconfigure(0, weight=1)
+        self.shpb_figure = Figure(figsize=(10, 5), dpi=100, constrained_layout=True)
+        self.shpb_ax = self.shpb_figure.add_subplot(111)
+        self.shpb_canvas = FigureCanvasTkAgg(self.shpb_figure, master=plot_frame)
+        self.shpb_canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+        toolbar = NavigationToolbar2Tk(
+            self.shpb_canvas, ttk.Frame(plot_frame), pack_toolbar=False
+        )
+        toolbar.update()
+        toolbar.pack(side="left")
+        self.shpb_summary = ttk.Treeview(
+            summary_frame, columns=("value",), show="tree headings", height=6
+        )
+        self.shpb_summary.heading("#0", text="SHPB metric")
+        self.shpb_summary.heading("value", text="Value")
+        self.shpb_summary.column("#0", width=450)
+        self.shpb_summary.column("value", width=500)
+        self.shpb_summary.pack(fill="both", expand=True)
+
     def _panel_export_buttons(
         self, parent: ttk.Frame, panel: str, default_stem: str
     ) -> None:
@@ -1040,6 +1179,17 @@ class CorrectionApp:
             matrix_density_multiplier=float(
                 self.values["matrix_density_multiplier"].get()
             ),
+        )
+
+    def _shpb_config(self) -> SHPBConfig:
+        return SHPBConfig(
+            bar_modulus_gpa=float(self.values["shpb_bar_modulus_gpa"].get()),
+            bar_density_kg_m3=float(self.values["shpb_bar_density_kg_m3"].get()),
+            bar_diameter_mm=float(self.values["shpb_bar_diameter_mm"].get()),
+            specimen_diameter_mm=float(self.values["shpb_specimen_diameter_mm"].get()),
+            specimen_length_mm=float(self.values["shpb_specimen_length_mm"].get()),
+            static_proof_stress_mpa=float(self.values["shpb_static_proof_mpa"].get()),
+            reference_strain_rate_s=float(self.values["shpb_reference_rate_s"].get()),
         )
 
     def _calculate_wha_models(self) -> None:
@@ -1362,6 +1512,69 @@ class CorrectionApp:
         self._draw_advanced_wha()
         self._fill_summary_table(self.advanced_wha_summary, summary)
         self.status.set("Advanced WHA sensitivity views recalculated.")
+
+    def _browse_shpb_file(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Choose SHPB pulse file",
+            filetypes=[
+                ("Data files", "*.csv *.tsv *.txt *.dat *.xlsx *.xls"),
+                ("All files", "*.*"),
+            ],
+        )
+        if path:
+            self.values["shpb_file"].set(path)
+
+    def _draw_shpb(self) -> None:
+        if self.result is None:
+            return
+        view = self._selected_plot_id("shpb").split(".", 1)[1]
+        draw_shpb_view(self.shpb_ax, self.result, view=view)
+        self.shpb_canvas.draw_idle()
+
+    def _shpb_view_changed(self, _event=None) -> None:
+        if self.result is not None and self.result.high_rate:
+            self._draw_shpb()
+
+    def _recalculate_shpb(self) -> None:
+        path = self.values["shpb_file"].get().strip()
+        if not path:
+            messagebox.showwarning(
+                "No SHPB file",
+                "Choose a pulse file containing time, incident, reflected, and "
+                "transmitted histories.",
+            )
+            return
+        try:
+            self.shpb_table = read_data_table(path)
+            waves = prepare_shpb_waves(
+                self.shpb_table,
+                time_column=self.values["shpb_time_column"].get(),
+                incident_column=self.values["shpb_incident_column"].get(),
+                reflected_column=self.values["shpb_reflected_column"].get(),
+                transmitted_column=self.values["shpb_transmitted_column"].get(),
+                time_unit=self.values["shpb_time_unit"].get(),
+            )
+            high_rate, summary = analyze_shpb(waves, self._shpb_config())
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("SHPB analysis failed", str(exc))
+            return
+        if self.result is None:
+            self.result = CorrectionResult(
+                config=CorrectionConfig(
+                    "compression", 310_000.0, "strain", 0.0005, 0.0025
+                ),
+                audit=pd.DataFrame(),
+                corrected_curve=pd.DataFrame(),
+                summary={},
+            )
+        self.result.high_rate = high_rate
+        self.result.summary["shpb_analysis"] = summary
+        self._draw_shpb()
+        self._fill_summary_table(self.shpb_summary, summary)
+        self.status.set(
+            "SHPB waves reduced. Check force equilibrium before interpreting "
+            "the response."
+        )
 
     def _selected_plot_id(self, panel: str) -> str:
         selected = self.plot_selections[panel].get()

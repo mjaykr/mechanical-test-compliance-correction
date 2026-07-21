@@ -840,6 +840,85 @@ ADVANCED_WHA_VIEW_LABELS = {
 }
 
 
+def draw_shpb_view(ax: plt.Axes, result: CorrectionResult, *, view: str) -> None:
+    """Draw a selectable wave, response, or SHPB validation plot."""
+
+    ax.clear()
+    data = (result.high_rate or {}).get(view, pd.DataFrame())
+    summary = result.summary.get("shpb_analysis", {})
+    if data.empty:
+        ax.text(
+            0.5,
+            0.5,
+            str(summary.get("reason", "Load SHPB pulses first")),
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+        )
+        return
+    if view == "waves":
+        x = 1.0e6 * data["time_s"]
+        for column, color, label in (
+            ("incident_bar_strain", "#0072B2", "Incident"),
+            ("reflected_bar_strain", "#D55E00", "Reflected"),
+            ("transmitted_bar_strain", "#009E73", "Transmitted"),
+        ):
+            ax.plot(x, 1.0e6 * data[column], color=color, label=label)
+        ax.set_xlabel("Time (µs)")
+        ax.set_ylabel("Bar strain (µε)")
+    elif view == "response":
+        ax.plot(
+            100.0 * data["specimen_engineering_strain"],
+            data["transmitted_stress_MPa"],
+            color="#0072B2",
+            label="Transmitted-bar stress",
+        )
+        ax.plot(
+            100.0 * data["specimen_engineering_strain"],
+            data["incident_face_stress_MPa"],
+            "--",
+            color="#D55E00",
+            label="Incident-face stress",
+        )
+        ax.set_xlabel("Specimen engineering strain (%)")
+        ax.set_ylabel("Compression stress (MPa)")
+    elif view == "rate_equilibrium":
+        x = 1.0e6 * data["time_s"]
+        ax.plot(
+            x,
+            data["specimen_engineering_strain_rate_s-1"],
+            color="#0072B2",
+            label="Strain rate",
+        )
+        ax.set_xlabel("Time (µs)")
+        ax.set_ylabel("Strain rate (s$^{-1}$)")
+        twin = ax.twinx()
+        twin.plot(
+            x,
+            100.0 * data["stress_equilibrium_mismatch_fraction"],
+            "--",
+            color="#D55E00",
+            label="Force mismatch",
+        )
+        twin.set_ylabel("Force mismatch (%)")
+        ax.legend(loc="upper left")
+        twin.legend(loc="upper right")
+        _polish(ax)
+        return
+    else:
+        raise ValueError(f"Unknown SHPB view: {view}")
+    ax.set_title(SHPB_VIEW_LABELS[view])
+    ax.legend(loc="best")
+    _polish(ax)
+
+
+SHPB_VIEW_LABELS = {
+    "waves": "Incident, reflected, and transmitted pulses",
+    "response": "SHPB dynamic compression response",
+    "rate_equilibrium": "Strain-rate and force-equilibrium check",
+}
+
+
 def plot_corrected_analysis(
     result: CorrectionResult, output_dir: str | Path
 ) -> tuple[Path, Path]:

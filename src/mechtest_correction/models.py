@@ -63,3 +63,4 @@ class CorrectionResult:
     dislocation_density: pd.DataFrame | None = None
     micromechanical: pd.DataFrame | None = None
     advanced_wha: dict[str, pd.DataFrame] | None = None
+    high_rate: dict[str, pd.DataFrame] | None = None

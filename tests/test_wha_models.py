@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from mechtest_correction import CorrectionConfig, correct_curve
 from mechtest_correction.cli import write_outputs
+from mechtest_correction.high_rate import SHPBConfig, analyze_shpb, prepare_shpb_waves
 from mechtest_correction.plot_registry import PLOT_SPECS, plot_data
 from mechtest_correction.publication import export_ieee_plot, panel_data
 from mechtest_correction.wha_models import (
@@ -46,6 +48,24 @@ def wha_result(synthetic_curve):
         result, MicromechanicalConfig(), AdvancedWHAConfig()
     )
     result.summary["advanced_wha_analysis"] = advanced
+    time_us = np.linspace(0.0, 200.0, 401)
+    pulse = np.sin(np.pi * time_us / time_us.max())
+    waves = prepare_shpb_waves(
+        pd.DataFrame(
+            {
+                "time": time_us,
+                "incident": 1.0e-3 * pulse,
+                "reflected": -2.5e-4 * pulse,
+                "transmitted": 6.0e-4 * pulse,
+            }
+        ),
+        time_column="time",
+        incident_column="incident",
+        reflected_column="reflected",
+        transmitted_column="transmitted",
+    )
+    result.high_rate, shpb = analyze_shpb(waves, SHPBConfig())
+    result.summary["shpb_analysis"] = shpb
     return result
 
 
@@ -116,10 +136,16 @@ def test_advanced_wha_homogenization_and_sensitivities(wha_result):
 
 
 def test_registry_exposes_every_plot_and_new_panel_data(wha_result):
-    assert len(PLOT_SPECS) == 20
+    assert len(PLOT_SPECS) == 23
     for spec in PLOT_SPECS:
         assert not plot_data(wha_result, spec.plot_id).empty
-    for panel in ("microstructure", "dislocation", "micromechanical", "advanced_wha"):
+    for panel in (
+        "microstructure",
+        "dislocation",
+        "micromechanical",
+        "advanced_wha",
+        "shpb",
+    ):
         assert not panel_data(wha_result, panel).empty
 
 
@@ -154,5 +180,8 @@ def test_complete_export_includes_wha_analysis_artifacts(tmp_path, wha_result):
         "advanced_wha_summary.csv",
         "advanced_wha_mori_tanaka_data.csv",
         "advanced_wha_two_phase_dislocation_data.csv",
+        "shpb_waves_data.csv",
+        "shpb_response_data.csv",
+        "shpb_summary.csv",
     }
     assert expected <= {path.name for path in output.iterdir()}

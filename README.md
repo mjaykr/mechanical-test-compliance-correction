@@ -45,11 +45,12 @@ load-frame compliance test.
 - Mode-specific tensile and compression property analysis.
 - Engineering-to-true conversion using mode-appropriate equations.
 - Volumetric work integration.
-- Stable registry for 20 independently exportable scientific plots.
+- Stable registry for 23 independently exportable scientific plots.
 - Two-phase Hall-Petch projection with explicit W and matrix contributions.
 - Effective Taylor dislocation density and Kocks-Mecking density evolution.
 - WHA Voigt-Reuss-Hill load-sharing bounds with separate phase properties.
 - Advanced WHA homogenization and sensitivity views in one selectable panel.
+- Dedicated compression Split-Hopkinson pressure bar (SHPB) pulse reduction.
 - Corrected CSV, property/model/audit CSVs, JSON summary, and Matplotlib figures.
 - Synthetic tests and GitHub Actions continuous integration.
 
@@ -98,7 +99,7 @@ the same audit CSV, corrected curve, JSON summary, and figures as the command-
 line tool. It proposes column mappings automatically and lets you select a
 different pair when the machine export contains additional channels.
 
-The interactive workflow is arranged in eleven tabs:
+The interactive workflow is arranged in twelve tabs:
 
 1. **Import** previews up to 100 rows, identifies numeric columns, proposes a
    strain/stress or extension/load mapping, and lets you correct that mapping.
@@ -125,7 +126,11 @@ The interactive workflow is arranged in eleven tabs:
     sensitivities; separate BCC-W/FCC-matrix flow laws; and two-phase
     dislocation-density scenarios. Every selected view has its own data and
     IEEE export buttons.
-11. **Export** saves the complete audit outputs and an `analysis_settings.json`
+11. **High strain rate / SHPB** imports a separate pulse file, reduces incident,
+    reflected, and transmitted bar-strain histories using the 1-D SHPB equations,
+    and plots pulse histories, dynamic compression response, strain rate, and
+    force-equilibrium mismatch.
+12. **Export** saves the complete audit outputs and an `analysis_settings.json`
    file. Settings can also be saved and reloaded independently.
 
 The graph selection is an analysis aid: use a visibly linear, pre-yield region
@@ -265,6 +270,18 @@ contiguity, and porosity as key response variables
 ([WHA microstructure study](https://doi.org/10.1016/j.msea.2010.08.071);
 [porosity study](https://doi.org/10.1179/pom.1979.22.4.175)).
 
+## High strain rate / Split-Hopkinson pressure bar
+
+The SHPB panel is a separate compression-pulse workflow. Provide a CSV, text, or
+Excel file with time, incident, reflected, and transmitted **bar-strain** columns,
+then set the bar and specimen dimensions. The program uses a one-dimensional
+elastic-wave reduction: transmitted pulse for stress and reflected pulse for
+strain rate and integrated strain. It normalizes a global gauge-polarity reversal,
+but it does not perform dispersion or gauge-to-interface pulse-shift corrections.
+Inspect force-equilibrium mismatch and pulse alignment before reporting response.
+The assumptions follow modern SHPB guidance
+([Yokoyama, 2025](https://doi.org/10.11395/aem.25-0008)).
+
 ## Plot-data and IEEE export
 
 Every analysis panel now uses a stable plot registry. Select any individual
@@ -320,6 +337,8 @@ Each run creates:
   load-sharing bounds, effective moduli, and RMSE.
 - `advanced_wha_*_data.csv` and `advanced_wha_summary.csv`: all selectable
   advanced-WHA model data and the stated sensitivity assumptions.
+- `shpb_waves_data.csv`, `shpb_response_data.csv`, and `shpb_summary.csv`:
+  pulse histories, dynamic response, equilibrium diagnostic, and SHPB inputs.
 - `correction_audit.csv`: original rows, normalized data, removed compliance,
   toe correction, inclusion status, and monotonic adjustment.
 - `summary.json`: assumptions, fitted values, proof stress, terminal values,
