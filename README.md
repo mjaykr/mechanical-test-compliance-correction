@@ -45,7 +45,7 @@ load-frame compliance test.
 - Mode-specific tensile and compression property analysis.
 - Engineering-to-true conversion using mode-appropriate equations.
 - Volumetric work integration.
-- Corrected CSV, property and audit CSVs, JSON summary, and IEEE-style figures.
+- Corrected CSV, property/model/audit CSVs, JSON summary, and Matplotlib figures.
 - Synthetic tests and GitHub Actions continuous integration.
 
 ## Installation
@@ -102,7 +102,9 @@ The interactive workflow is arranged in four tabs:
 3. **Correct & review** embeds the raw and corrected curves. Drag horizontally
    over the raw graph to select the elastic fitting interval, then inspect the
    apparent and recovered moduli, fit R-squared, toe strain, and compliance.
-4. **Export** saves the complete audit outputs and an `analysis_settings.json`
+4. **Corrected-data analysis** plots corrected engineering and true responses,
+   identifies proof yield, and compares post-yield flow-law fits.
+5. **Export** saves the complete audit outputs and an `analysis_settings.json`
    file. Settings can also be saved and reloaded independently.
 
 The graph selection is an analysis aid: use a visibly linear, pre-yield region
@@ -127,14 +129,38 @@ barreling, friction, or specimen instability.
 The exported `mechanical_properties.csv` provides a compact property table for
 further statistical analysis.
 
-## IEEE figures
+## Yield-offset convention
 
-SciencePlots' `science` and `ieee` styles are used for exported figures by
-default. Exports include a vector PDF, a 600 dpi PNG, and a 600 dpi TIFF. Final
-publication rendering uses LaTeX and therefore requires MiKTeX or TeX Live. If
-LaTeX is unavailable, the software emits a warning and visibly marks the
-no-LaTeX IEEE rendering as a draft. The interactive GUI uses the no-LaTeX IEEE
-style to keep redraws responsive.
+The default is a **0.2% offset**, equivalent to `0.002` engineering strain. This
+is the conventional proof-yield definition for metals without a distinct yield
+point and is used in both tensile and ASTM E9 compression reporting. A **0.02%
+offset** (`0.0002`) is available when explicitly required by a material
+specification or reporting convention; it is not treated as interchangeable
+with 0.2%.
+
+Supporting sources include the
+[NIST tensile-property report](https://doi.org/10.6028/NIST.TN.2165) and the
+[NIST ASTM E9 compression reproducibility study](https://doi.org/10.6028/NIST.TN.1679).
+
+## Post-yield flow-law fitting
+
+The analysis tab fits **Hollomon, Ludwik, Swift, Voce, and linear hardening**
+models to true stress versus true plastic strain. True plastic strain is
+calculated as `true strain - true stress / E`. Fitting starts at the selected
+offset proof point and ends at peak engineering stress by default. For tension,
+this is the UTS and avoids treating the simple area conversion as valid after
+necking. The terminal-point option is available for monotonic compression or a
+record whose maximum occurs at its final point.
+
+Every model reports its equation, fitted parameters, R-squared, and RMSE. No
+model is automatically declared physically correct merely because it has the
+largest R-squared. The model set follows commonly evaluated metallic flow laws;
+see this [comparative model study](https://doi.org/10.1007/s00170-025-16068-8)
+and this [experimental compression application](https://pmc.ncbi.nlm.nih.gov/articles/PMC10057155/).
+
+SciencePlots is no longer used or required. Figures use standard Matplotlib so
+the GUI and exports do not depend on a LaTeX installation or journal-specific
+style package.
 
 ### Command line
 
@@ -168,13 +194,16 @@ Each run creates:
 
 - `corrected_curve.csv`: usable corrected engineering and true curve.
 - `mechanical_properties.csv`: mode-specific corrected-data properties.
+- `flow_model_fits.csv`: equations, parameters, R-squared, and RMSE.
+- `flow_fit_data.csv`: experimental true flow curve and model predictions.
 - `correction_audit.csv`: original rows, normalized data, removed compliance,
   toe correction, inclusion status, and monotonic adjustment.
 - `summary.json`: assumptions, fitted values, proof stress, terminal values,
   work density, and warnings.
 - `stress_strain_comparison.png`: high-resolution review figure.
 - `stress_strain_comparison.pdf`: vector figure.
-- `stress_strain_comparison.tiff`: 600 dpi publication raster.
+- `corrected_data_analysis.png`: engineering, true, and flow-model panels.
+- `corrected_data_analysis.pdf`: vector version of the analysis panels.
 
 ## Sign and unit conventions
 

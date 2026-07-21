@@ -37,10 +37,13 @@ def test_cli_creates_expected_outputs(tmp_path, synthetic_curve):
         "correction_audit.csv",
         "corrected_curve.csv",
         "mechanical_properties.csv",
+        "flow_model_fits.csv",
+        "flow_fit_data.csv",
         "summary.json",
         "stress_strain_comparison.png",
         "stress_strain_comparison.pdf",
-        "stress_strain_comparison.tiff",
+        "corrected_data_analysis.png",
+        "corrected_data_analysis.pdf",
     }
     assert expected == {path.name for path in output_dir.iterdir()}
     summary = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))

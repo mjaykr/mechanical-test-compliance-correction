@@ -59,6 +59,20 @@ def test_compression_properties_include_specified_strains(synthetic_curve):
     assert properties["maximum_compressive_stress"]["value"] == 1000.0
 
 
+def test_flow_models_are_fit_from_yield_to_peak(synthetic_curve):
+    frame, _, _ = synthetic_curve
+    result = correct_curve(frame, make_config("tension"))
+    fits = result.summary["flow_model_fits"]
+    assert fits["status"] == "ok"
+    assert fits["yield_offset_percent"] == pytest.approx(0.2)
+    assert set(fits["models"]) == {"Hollomon", "Ludwik", "Swift", "Voce", "Linear"}
+    assert all(
+        model.get("R_squared") is not None
+        for model in fits["models"].values()
+        if "parameters" in model
+    )
+
+
 @pytest.mark.parametrize("mode", ["tension", "compression"])
 def test_true_conversion(mode, synthetic_curve):
     frame, _, _ = synthetic_curve

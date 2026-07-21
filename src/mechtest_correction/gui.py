@@ -15,16 +15,21 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.figure import Figure
 from matplotlib.widgets import SpanSelector
 
+from .analysis import fit_flow_models
 from .cli import write_outputs
 from .correction import correct_curve
 from .io import numeric_column_names, read_data_table
 from .models import CorrectionConfig, CorrectionResult
-from .plotting import configure_ieee_style
+from .plotting import configure_plot_style, draw_corrected_analysis
 
 
 def config_from_values(values: Mapping[str, str]) -> CorrectionConfig:
     """Build and validate a correction configuration from GUI text fields."""
 
+    if "yield_offset_percent" in values:
+        offset_strain = float(values["yield_offset_percent"]) / 100.0
+    else:
+        offset_strain = float(values["offset_strain"])
     config = CorrectionConfig(
         mode=values["mode"],  # type: ignore[arg-type]
         target_modulus_mpa=float(values["target_modulus_gpa"]) * 1000.0,
@@ -35,7 +40,7 @@ def config_from_values(values: Mapping[str, str]) -> CorrectionConfig:
         stress_unit=values["stress_unit"],  # type: ignore[arg-type]
         strain_sign=values["strain_sign"],  # type: ignore[arg-type]
         stress_sign=values["stress_sign"],  # type: ignore[arg-type]
-        offset_strain=float(values["offset_strain"]),
+        offset_strain=offset_strain,
     )
     config.validate()
     return config
@@ -75,7 +80,7 @@ def prepare_curve(table: pd.DataFrame, values: Mapping[str, str]) -> pd.DataFram
 
 
 class CorrectionApp:
-    """Four-stage Tkinter workflow with preview and interactive fit selection."""
+    """Five-stage Tkinter workflow with correction and constitutive analysis."""
 
     SETTINGS_KEYS = (
         "data_basis",
@@ -87,6 +92,8 @@ class CorrectionApp:
         "fit_min",
         "fit_max",
         "offset_strain",
+        "yield_offset_percent",
+        "flow_fit_end",
         "strain_unit",
         "stress_unit",
         "strain_sign",
@@ -99,11 +106,11 @@ class CorrectionApp:
     )
 
     def __init__(self, root: Tk) -> None:
-        configure_ieee_style(use_latex=False)
+        configure_plot_style()
         self.root = root
         self.root.title("Mechanical Test Compliance Correction")
-        self.root.geometry("1050x720")
-        self.root.minsize(900, 620)
+        self.root.geometry("1150x820")
+        self.root.minsize(950, 680)
         self.table: pd.DataFrame | None = None
         self.curve: pd.DataFrame | None = None
         self.result: CorrectionResult | None = None
@@ -126,6 +133,8 @@ class CorrectionApp:
             "fit_min": StringVar(value="0.0005"),
             "fit_max": StringVar(value="0.0025"),
             "offset_strain": StringVar(value="0.002"),
+            "yield_offset_percent": StringVar(value="0.2"),
+            "flow_fit_end": StringVar(value="peak"),
             "strain_unit": StringVar(value="fraction"),
             "stress_unit": StringVar(value="MPa"),
             "strain_sign": StringVar(value="auto"),
@@ -144,14 +153,19 @@ class CorrectionApp:
         self.import_tab = ttk.Frame(self.notebook, padding=10)
         self.setup_tab = ttk.Frame(self.notebook, padding=10)
         self.analyze_tab = ttk.Frame(self.notebook, padding=8)
+        self.corrected_analysis_tab = ttk.Frame(self.notebook, padding=8)
         self.export_tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.import_tab, text="1  Import")
         self.notebook.add(self.setup_tab, text="2  Test setup")
         self.notebook.add(self.analyze_tab, text="3  Correct & review")
-        self.notebook.add(self.export_tab, text="4  Export")
+        self.notebook.add(
+            self.corrected_analysis_tab, text="4  Corrected-data analysis"
+        )
+        self.notebook.add(self.export_tab, text="5  Export")
         self._build_import_tab()
         self._build_setup_tab()
         self._build_analyze_tab()
+        self._build_corrected_analysis_tab()
         self._build_export_tab()
         ttk.Label(shell, textvariable=self.status).pack(fill="x", pady=(7, 0))
 
@@ -240,13 +254,22 @@ class CorrectionApp:
                 ("Target E (GPa)", "target_modulus_gpa"),
                 ("Fit min", "fit_min"),
                 ("Fit max", "fit_max"),
-                ("Offset", "offset_strain"),
             ]
         ):
             ttk.Label(controls, text=label).grid(row=0, column=2 * index, sticky="w")
             ttk.Entry(controls, textvariable=self.values[name], width=11).grid(
                 row=0, column=2 * index + 1, padx=(3, 10)
             )
+        ttk.Label(controls, text="Yield offset (%)").grid(row=0, column=6, sticky="w")
+        offset_combo = ttk.Combobox(
+            controls,
+            textvariable=self.values["yield_offset_percent"],
+            values=["0.2", "0.02"],
+            state="readonly",
+            width=8,
+        )
+        offset_combo.grid(row=0, column=7, padx=(3, 10))
+        offset_combo.bind("<<ComboboxSelected>>", self._analysis_settings_changed)
         ttk.Button(
             controls, text="Apply correction", command=self._preview_result
         ).grid(row=0, column=8, padx=4)
@@ -281,6 +304,92 @@ class CorrectionApp:
             drag_from_anywhere=True,
         )
         self._empty_plot()
+
+    def _build_corrected_analysis_tab(self) -> None:
+        tab = self.corrected_analysis_tab
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(1, weight=1)
+        controls = ttk.Frame(tab)
+        controls.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        ttk.Label(controls, text="Yield offset convention").pack(side="left")
+        offset_combo = ttk.Combobox(
+            controls,
+            textvariable=self.values["yield_offset_percent"],
+            values=["0.2", "0.02"],
+            state="readonly",
+            width=8,
+        )
+        offset_combo.pack(side="left", padx=(5, 14))
+        offset_combo.bind("<<ComboboxSelected>>", self._analysis_settings_changed)
+        ttk.Label(controls, text="Flow-fit end").pack(side="left")
+        end_combo = ttk.Combobox(
+            controls,
+            textvariable=self.values["flow_fit_end"],
+            values=["peak", "terminal"],
+            state="readonly",
+            width=10,
+        )
+        end_combo.pack(side="left", padx=5)
+        end_combo.bind("<<ComboboxSelected>>", self._analysis_settings_changed)
+        ttk.Label(
+            controls,
+            text=(
+                "Default: 0.2%. Use 0.02% only when required by the material "
+                "specification or reporting convention."
+            ),
+        ).pack(side="left", padx=12)
+
+        content = ttk.PanedWindow(tab, orient="vertical")
+        content.grid(row=1, column=0, sticky="nsew")
+        plot_frame = ttk.Frame(content)
+        table_frame = ttk.Frame(content)
+        content.add(plot_frame, weight=4)
+        content.add(table_frame, weight=1)
+        plot_frame.columnconfigure(0, weight=1)
+        plot_frame.rowconfigure(0, weight=1)
+        self.analysis_figure = Figure(figsize=(10, 6), dpi=100, constrained_layout=True)
+        grid = self.analysis_figure.add_gridspec(2, 2)
+        self.analysis_axes = (
+            self.analysis_figure.add_subplot(grid[0, 0]),
+            self.analysis_figure.add_subplot(grid[0, 1]),
+            self.analysis_figure.add_subplot(grid[1, :]),
+        )
+        self.analysis_canvas = FigureCanvasTkAgg(
+            self.analysis_figure, master=plot_frame
+        )
+        self.analysis_canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+        analysis_toolbar_frame = ttk.Frame(plot_frame)
+        analysis_toolbar_frame.grid(row=1, column=0, sticky="ew")
+        self.analysis_toolbar = NavigationToolbar2Tk(
+            self.analysis_canvas, analysis_toolbar_frame, pack_toolbar=False
+        )
+        self.analysis_toolbar.update()
+        self.analysis_toolbar.pack(side="left")
+        for axis, title in zip(
+            self.analysis_axes,
+            ("Corrected engineering response", "True response", "Flow-law fits"),
+            strict=True,
+        ):
+            axis.set_title(title)
+        self.analysis_canvas.draw_idle()
+
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+        columns = ("equation", "r_squared", "rmse", "parameters")
+        self.model_table = ttk.Treeview(
+            table_frame, columns=columns, show="tree headings", height=6
+        )
+        self.model_table.heading("#0", text="Model")
+        self.model_table.heading("equation", text="Equation")
+        self.model_table.heading("r_squared", text="R²")
+        self.model_table.heading("rmse", text="RMSE (MPa)")
+        self.model_table.heading("parameters", text="Parameters")
+        self.model_table.column("#0", width=90)
+        self.model_table.column("equation", width=275)
+        self.model_table.column("r_squared", width=75, anchor="e")
+        self.model_table.column("rmse", width=90, anchor="e")
+        self.model_table.column("parameters", width=430)
+        self.model_table.grid(row=0, column=0, sticky="nsew")
 
     def _build_export_tab(self) -> None:
         tab = self.export_tab
@@ -458,6 +567,12 @@ class CorrectionApp:
             self.curve = prepare_curve(self.table, self._plain_values())
             config = config_from_values(self._plain_values())
             self.result = correct_curve(self.curve, config)
+            self.result.summary["flow_model_fits"] = fit_flow_models(
+                self.result.corrected_curve,
+                modulus_mpa=config.target_modulus_mpa,
+                yield_offset=config.offset_strain,
+                end_criterion=self.values["flow_fit_end"].get(),
+            )
             self._plot_result()
             self._show_summary()
         except (RuntimeError, ValueError) as exc:
@@ -516,6 +631,42 @@ class CorrectionApp:
         )
         self.status.set("Correction preview updated. Review the fit before exporting.")
         self.canvas.draw_idle()
+        self._update_corrected_analysis()
+
+    def _analysis_settings_changed(self, _event=None) -> None:
+        if self.table is not None:
+            self._preview_result(show_errors=False)
+
+    def _update_corrected_analysis(self) -> None:
+        if self.result is None:
+            return
+        draw_corrected_analysis(self.analysis_axes, self.result)
+        self.analysis_canvas.draw_idle()
+        self._show_model_table()
+
+    def _show_model_table(self) -> None:
+        self.model_table.delete(*self.model_table.get_children())
+        if self.result is None:
+            return
+        fits = self.result.summary["flow_model_fits"]
+        for name, model in fits.get("models", {}).items():
+            if "parameters" in model:
+                parameters = ", ".join(
+                    f"{key}={float(value):.5g}"
+                    for key, value in model["parameters"].items()
+                )
+                r_squared = f"{float(model['R_squared']):.6f}"
+                rmse = f"{float(model['RMSE_MPa']):.4g}"
+            else:
+                parameters = str(model.get("error", "Fit unavailable"))
+                r_squared = "—"
+                rmse = "—"
+            self.model_table.insert(
+                "",
+                "end",
+                text=name,
+                values=(model["equation"], r_squared, rmse, parameters),
+            )
 
     def _reset_fit(self) -> None:
         self.values["fit_min"].set("0.0005")
@@ -549,7 +700,7 @@ class CorrectionApp:
                     self.summary.insert(
                         "", "end", text=f"Caveat {index}", values=(caveat,)
                     )
-            elif key != "mechanical_properties":
+            elif key not in {"mechanical_properties", "flow_model_fits"}:
                 self.summary.insert(
                     "", "end", text=key.replace("_", " "), values=(value,)
                 )

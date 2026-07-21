@@ -7,11 +7,11 @@ from pathlib import Path
 
 import tomllib
 
-from .analysis import properties_frame
+from .analysis import flow_fit_data_frame, flow_models_frame, properties_frame
 from .correction import correct_curve
 from .io import read_curve
 from .models import CorrectionConfig
-from .plotting import plot_comparison
+from .plotting import plot_comparison, plot_corrected_analysis
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -54,12 +54,6 @@ def _parser() -> argparse.ArgumentParser:
         "--add-origin",
         action=argparse.BooleanOptionalAction,
         default=None,
-    )
-    parser.add_argument(
-        "--publication-style",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Use SciencePlots IEEE style (enabled by default)",
     )
     return parser
 
@@ -143,13 +137,10 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         result,
         output_dir,
         input_file=args.input,
-        publication_style=args.publication_style,
     )
 
 
-def write_outputs(
-    result, output_dir: Path, *, input_file: Path, publication_style: bool = True
-) -> dict[str, object]:
+def write_outputs(result, output_dir: Path, *, input_file: Path) -> dict[str, object]:
     """Write standard correction artifacts and return the run summary."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -158,6 +149,11 @@ def write_outputs(
     properties_frame(result.summary["mechanical_properties"]).to_csv(
         output_dir / "mechanical_properties.csv", index=False
     )
+    flow_fits = result.summary["flow_model_fits"]
+    flow_models_frame(flow_fits).to_csv(output_dir / "flow_model_fits.csv", index=False)
+    flow_fit_data_frame(
+        result.corrected_curve, flow_fits, result.config.target_modulus_mpa
+    ).to_csv(output_dir / "flow_fit_data.csv", index=False)
     summary = dict(result.summary)
     summary["input_file"] = str(input_file.resolve())
     summary["correction_equation"] = (
@@ -166,11 +162,8 @@ def write_outputs(
     (output_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, allow_nan=False), encoding="utf-8"
     )
-    plot_comparison(
-        result,
-        output_dir,
-        publication_style=publication_style,
-    )
+    plot_comparison(result, output_dir)
+    plot_corrected_analysis(result, output_dir)
     return summary
 
 
