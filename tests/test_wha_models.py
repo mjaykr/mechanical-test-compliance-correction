@@ -5,6 +5,11 @@ import pandas as pd
 import pytest
 
 from mechtest_correction import CorrectionConfig, correct_curve
+from mechtest_correction.advanced_constitutive import (
+    AdvancedConstitutiveConfig,
+    fit_advanced_constitutive,
+    prepare_multicondition_data,
+)
 from mechtest_correction.cli import write_outputs
 from mechtest_correction.high_rate import SHPBConfig, analyze_shpb, prepare_shpb_waves
 from mechtest_correction.plot_registry import PLOT_SPECS, plot_data
@@ -66,6 +71,35 @@ def wha_result(synthetic_curve):
     )
     result.high_rate, shpb = analyze_shpb(waves, SHPBConfig())
     result.summary["shpb_analysis"] = shpb
+    constitutive_rows = []
+    for rate in (1.0e-3, 1.0e3):
+        for temperature in (293.15, 773.15):
+            for strain in np.linspace(0.002, 0.2, 20):
+                homologous = (temperature - 293.15) / (3695.0 - 293.15)
+                stress = (
+                    (650.0 + 1100.0 * strain**0.32)
+                    * (1.0 + 0.018 * np.log(rate / 1.0e-3))
+                    * (1.0 - homologous**1.1)
+                )
+                constitutive_rows.append(
+                    {
+                        "plastic_strain": strain,
+                        "flow_stress_MPa": stress,
+                        "strain_rate_s-1": rate,
+                        "temperature_K": temperature,
+                    }
+                )
+    constitutive_data = prepare_multicondition_data(
+        pd.DataFrame(constitutive_rows),
+        strain_column="plastic_strain",
+        stress_column="flow_stress_MPa",
+        strain_rate_column="strain_rate_s-1",
+        temperature_column="temperature_K",
+    )
+    result.advanced_constitutive, constitutive_summary = fit_advanced_constitutive(
+        constitutive_data, AdvancedConstitutiveConfig()
+    )
+    result.summary["advanced_constitutive_analysis"] = constitutive_summary
     return result
 
 
@@ -136,7 +170,7 @@ def test_advanced_wha_homogenization_and_sensitivities(wha_result):
 
 
 def test_registry_exposes_every_plot_and_new_panel_data(wha_result):
-    assert len(PLOT_SPECS) == 23
+    assert len(PLOT_SPECS) == 28
     for spec in PLOT_SPECS:
         assert not plot_data(wha_result, spec.plot_id).empty
     for panel in (
@@ -145,6 +179,7 @@ def test_registry_exposes_every_plot_and_new_panel_data(wha_result):
         "micromechanical",
         "advanced_wha",
         "shpb",
+        "advanced_constitutive",
     ):
         assert not panel_data(wha_result, panel).empty
 
@@ -183,5 +218,7 @@ def test_complete_export_includes_wha_analysis_artifacts(tmp_path, wha_result):
         "shpb_waves_data.csv",
         "shpb_response_data.csv",
         "shpb_summary.csv",
+        "advanced_constitutive_johnson_cook_data.csv",
+        "advanced_constitutive_summary.csv",
     }
     assert expected <= {path.name for path in output.iterdir()}

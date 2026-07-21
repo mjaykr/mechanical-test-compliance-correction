@@ -64,3 +64,4 @@ class CorrectionResult:
     micromechanical: pd.DataFrame | None = None
     advanced_wha: dict[str, pd.DataFrame] | None = None
     high_rate: dict[str, pd.DataFrame] | None = None
+    advanced_constitutive: dict[str, pd.DataFrame] | None = None

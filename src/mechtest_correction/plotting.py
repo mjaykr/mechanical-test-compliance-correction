@@ -17,6 +17,7 @@ from matplotlib.ticker import (
     MaxNLocator,
 )
 
+from .advanced_constitutive import MODEL_LABELS
 from .analysis import evaluate_flow_model, flow_fit_data_frame
 from .models import CorrectionResult
 from .wha_models import hall_petch_contributions
@@ -917,6 +918,59 @@ SHPB_VIEW_LABELS = {
     "response": "SHPB dynamic compression response",
     "rate_equilibrium": "Strain-rate and force-equilibrium check",
 }
+
+
+def draw_advanced_constitutive_view(
+    ax: plt.Axes, result: CorrectionResult, *, model: str
+) -> None:
+    """Draw experimental and fitted multi-condition flow curves."""
+
+    ax.clear()
+    data = (result.advanced_constitutive or {}).get(model, pd.DataFrame())
+    if data.empty:
+        ax.text(
+            0.5,
+            0.5,
+            "Load and fit a multi-condition dataset first",
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+        )
+        return
+    colors = plt.get_cmap("tab10")
+    for index, (condition, group) in enumerate(data.groupby("condition", sort=False)):
+        group = group.sort_values("plastic_strain")
+        color = colors(index % 10)
+        rate = float(group["strain_rate_s-1"].iloc[0])
+        temperature = float(group["temperature_K"].iloc[0])
+        condition_label = (
+            rf"{rate:g} s$^{{-1}}$, {temperature:g} K"
+            if str(condition).strip()
+            else f"Condition {index + 1}"
+        )
+        ax.plot(
+            100.0 * group["plastic_strain"],
+            group["flow_stress_MPa"],
+            "o",
+            ms=2.5,
+            color=color,
+            alpha=0.65,
+            label=condition_label,
+        )
+        ax.plot(
+            100.0 * group["plastic_strain"],
+            group["predicted_flow_stress_MPa"],
+            "-",
+            color=color,
+            label="_nolegend_",
+        )
+    ax.set_title(MODEL_LABELS[model])
+    ax.set_xlabel("True plastic strain (%)")
+    ax.set_ylabel("True flow stress (MPa)")
+    ax.set_xlim(left=0.0)
+    ax.set_ylim(bottom=0.0)
+    ax.legend(loc="best", ncol=2)
+    _polish(ax)
 
 
 def plot_corrected_analysis(

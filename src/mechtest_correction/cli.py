@@ -150,10 +150,18 @@ def write_outputs(result, output_dir: Path, *, input_file: Path) -> dict[str, ob
     """Write standard correction artifacts and return the run summary."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    if result.corrected_curve.empty and result.high_rate:
-        for view, data in result.high_rate.items():
+    if result.corrected_curve.empty and (
+        result.high_rate or result.advanced_constitutive
+    ):
+        for view, data in (result.high_rate or {}).items():
             if not data.empty:
                 data.to_csv(output_dir / f"shpb_{view}_data.csv", index=False)
+        for model, data in (result.advanced_constitutive or {}).items():
+            if not data.empty:
+                data.to_csv(
+                    output_dir / f"advanced_constitutive_{model}_data.csv",
+                    index=False,
+                )
         summary = dict(result.summary)
         summary["input_file"] = str(input_file.resolve())
         (output_dir / "summary.json").write_text(
@@ -166,6 +174,22 @@ def write_outputs(result, output_dir: Path, *, input_file: Path) -> dict[str, ob
                 if not isinstance(value, (dict, list))
             ]
         ).to_csv(output_dir / "shpb_summary.csv", index=False)
+        model_summary = result.summary.get("advanced_constitutive_analysis", {})
+        if model_summary:
+            pd.DataFrame(
+                [
+                    {
+                        "model": name,
+                        **{
+                            key: value
+                            for key, value in details.items()
+                            if key != "parameters"
+                        },
+                        "parameters": json.dumps(details.get("parameters", {})),
+                    }
+                    for name, details in model_summary.get("models", {}).items()
+                ]
+            ).to_csv(output_dir / "advanced_constitutive_summary.csv", index=False)
         return summary
     result.audit.to_csv(output_dir / "correction_audit.csv", index=False)
     result.corrected_curve.to_csv(output_dir / "corrected_curve.csv", index=False)
@@ -233,6 +257,31 @@ def write_outputs(result, output_dir: Path, *, input_file: Path) -> dict[str, ob
                 if not isinstance(value, (dict, list))
             ]
         ).to_csv(output_dir / "shpb_summary.csv", index=False)
+    for model, data in (result.advanced_constitutive or {}).items():
+        if not data.empty:
+            data.to_csv(
+                output_dir / f"advanced_constitutive_{model}_data.csv", index=False
+            )
+    advanced_constitutive_summary = result.summary.get(
+        "advanced_constitutive_analysis", {}
+    )
+    if advanced_constitutive_summary:
+        pd.DataFrame(
+            [
+                {
+                    "model": name,
+                    **{
+                        key: value
+                        for key, value in details.items()
+                        if key != "parameters"
+                    },
+                    "parameters": json.dumps(details.get("parameters", {})),
+                }
+                for name, details in advanced_constitutive_summary.get(
+                    "models", {}
+                ).items()
+            ]
+        ).to_csv(output_dir / "advanced_constitutive_summary.csv", index=False)
     summary = dict(result.summary)
     summary["input_file"] = str(input_file.resolve())
     summary["correction_equation"] = (

@@ -1,5 +1,6 @@
 """Compliance correction for monotonic tensile and compression tests."""
 
+from .advanced_constitutive import AdvancedConstitutiveConfig
 from .correction import correct_curve
 from .high_rate import SHPBConfig
 from .models import CorrectionConfig, CorrectionResult
@@ -15,9 +16,10 @@ __all__ = [
     "CorrectionResult",
     "SHPBConfig",
     "AdvancedWHAConfig",
+    "AdvancedConstitutiveConfig",
     "DislocationConfig",
     "MicromechanicalConfig",
     "MicrostructureConfig",
     "correct_curve",
 ]
-__version__ = "0.8.0"
+__version__ = "0.9.0"

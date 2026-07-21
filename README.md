@@ -45,12 +45,13 @@ load-frame compliance test.
 - Mode-specific tensile and compression property analysis.
 - Engineering-to-true conversion using mode-appropriate equations.
 - Volumetric work integration.
-- Stable registry for 23 independently exportable scientific plots.
+- Stable registry for 28 independently exportable scientific plots.
 - Two-phase Hall-Petch projection with explicit W and matrix contributions.
 - Effective Taylor dislocation density and Kocks-Mecking density evolution.
 - WHA Voigt-Reuss-Hill load-sharing bounds with separate phase properties.
 - Advanced WHA homogenization and sensitivity views in one selectable panel.
 - Dedicated compression Split-Hopkinson pressure bar (SHPB) pulse reduction.
+- Multi-rate and multi-temperature constitutive fitting with five model families.
 - Corrected CSV, property/model/audit CSVs, JSON summary, and Matplotlib figures.
 - Synthetic tests and GitHub Actions continuous integration.
 
@@ -101,7 +102,7 @@ the same audit CSV, corrected curve, JSON summary, and figures as the command-
 line tool. It proposes column mappings automatically and lets you select a
 different pair when the machine export contains additional channels.
 
-The interactive workflow is arranged in twelve tabs:
+The interactive workflow is arranged in thirteen tabs:
 
 1. **Import** previews up to 100 rows, identifies numeric columns, proposes a
    strain/stress or extension/load mapping, and lets you correct that mapping.
@@ -113,31 +114,51 @@ The interactive workflow is arranged in twelve tabs:
 4. **Macroscopic response** plots corrected engineering and true responses,
    identifies proof yield, and tabulates tensile or compression properties.
 5. **Constitutive assessment** compares post-yield flow-law fits and parameters.
-6. **Work hardening** plots Kocks–Mecking `theta(sigma)` and `theta(epsilon_p)`,
+6. **Rate-temperature models** imports a tidy multi-condition flow dataset and
+   fits Johnson-Cook, BCC Zerilli-Armstrong, Khan-Huang-Liang, extended Voce,
+   and strain-compensated modified Arrhenius models from one dropdown panel.
+7. **Work hardening** plots Kocks–Mecking `theta(sigma)` and `theta(epsilon_p)`,
    with derivative smoothing and data-driven stage segmentation.
-7. **Microstructure & Hall-Petch** projects separate W-grain and matrix-grain
+8. **Microstructure & Hall-Petch** projects separate W-grain and matrix-grain
    strengthening contributions from user-supplied microstructural parameters.
-8. **Dislocation density** converts the post-yield curve to an effective Taylor
+9. **Dislocation density** converts the post-yield curve to an effective Taylor
    density and fits a Kocks-Mecking storage-recovery evolution law.
-9. **WHA two-phase model** compares the measured response with bilinear
+10. **WHA two-phase model** compares the measured response with bilinear
    Voigt, Reuss, and Hill load-sharing estimates using separate BCC W and FCC
    matrix properties.
-10. **Advanced WHA models** is one dropdown-driven panel for rule-of-mixtures
+11. **Advanced WHA models** is one dropdown-driven panel for rule-of-mixtures
     bounds; iso-strain and iso-stress response; Mori-Tanaka/Eshelby elasticity;
     phase load partition; interface strength, W-W contiguity, and porosity
     sensitivities; separate BCC-W/FCC-matrix flow laws; and two-phase
     dislocation-density scenarios. Every selected view has its own data and
     IEEE export buttons.
-11. **High strain rate / SHPB** imports a separate pulse file, reduces incident,
+12. **High strain rate / SHPB** imports a separate pulse file, reduces incident,
     reflected, and transmitted bar-strain histories using the 1-D SHPB equations,
     and plots pulse histories, dynamic compression response, strain rate, and
     force-equilibrium mismatch.
-12. **Export** saves the complete audit outputs and an `analysis_settings.json`
+13. **Export** saves the complete audit outputs and an `analysis_settings.json`
    file. Settings can also be saved and reloaded independently.
 
 The graph selection is an analysis aid: use a visibly linear, pre-yield region
 after initial platen seating or grip take-up. The software still treats the
 target modulus as an external assumption, not as a measured result.
+
+## Multi-rate and temperature constitutive modelling
+
+The advanced constitutive panel expects one tidy table with at least these four
+numeric columns: `plastic_strain`, `flow_stress_MPa`, `strain_rate_s-1`, and
+`temperature_K`. An optional `condition` column controls curve labels. At least
+two distinct strain rates and two distinct temperatures are required for fitting.
+The panel fits all five model families, reports parameters, R-squared, RMSE and
+AIC, and identifies the lowest-AIC model. The dropdown switches the live plot
+without refitting, while each selection has its own CSV and IEEE export.
+
+These are global phenomenological correlations; predictions must be validated
+against held-out conditions and should not be extrapolated beyond the calibrated
+domain. The implemented forms follow published descriptions of
+[Johnson-Cook](https://doi.org/10.1093/jom/ufad020),
+[Khan-Huang-Liang](https://doi.org/10.3390/ma18092061), and
+[strain-compensated Arrhenius modelling](https://doi.org/10.1007/s12598-015-0620-4).
 
 ## Corrected-data analysis
 
@@ -341,6 +362,9 @@ Each run creates:
   advanced-WHA model data and the stated sensitivity assumptions.
 - `shpb_waves_data.csv`, `shpb_response_data.csv`, and `shpb_summary.csv`:
   pulse histories, dynamic response, equilibrium diagnostic, and SHPB inputs.
+- `advanced_constitutive_*_data.csv` and
+  `advanced_constitutive_summary.csv`: observations, model predictions,
+  residuals, fitted parameters, and comparison metrics.
 - `correction_audit.csv`: original rows, normalized data, removed compliance,
   toe correction, inclusion status, and monotonic adjustment.
 - `summary.json`: assumptions, fitted values, proof stress, terminal values,

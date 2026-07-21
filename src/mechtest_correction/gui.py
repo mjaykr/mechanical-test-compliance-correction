@@ -15,6 +15,12 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.figure import Figure
 from matplotlib.widgets import SpanSelector
 
+from .advanced_constitutive import (
+    MODEL_LABELS,
+    AdvancedConstitutiveConfig,
+    fit_advanced_constitutive,
+    prepare_multicondition_data,
+)
 from .analysis import fit_flow_models
 from .cli import write_outputs
 from .correction import correct_curve
@@ -25,6 +31,7 @@ from .plot_registry import get_plot_spec, plot_data, plots_for_panel
 from .plotting import (
     ADVANCED_WHA_VIEW_LABELS,
     configure_plot_style,
+    draw_advanced_constitutive_view,
     draw_advanced_wha_view,
     draw_constitutive_assessment,
     draw_dislocation_panel,
@@ -105,7 +112,7 @@ def prepare_curve(table: pd.DataFrame, values: Mapping[str, str]) -> pd.DataFram
 
 
 class CorrectionApp:
-    """Ten-stage workflow from import through WHA micromechanics."""
+    """Thirteen-stage workflow for quasi-static and dynamic test analysis."""
 
     SETTINGS_KEYS = (
         "data_basis",
@@ -119,6 +126,17 @@ class CorrectionApp:
         "offset_strain",
         "yield_offset_percent",
         "flow_fit_end",
+        "advanced_constitutive_file",
+        "advanced_constitutive_model",
+        "advanced_constitutive_strain_column",
+        "advanced_constitutive_stress_column",
+        "advanced_constitutive_rate_column",
+        "advanced_constitutive_temperature_column",
+        "advanced_constitutive_condition_column",
+        "advanced_constitutive_reference_rate",
+        "advanced_constitutive_reference_temperature",
+        "advanced_constitutive_melting_temperature",
+        "advanced_constitutive_khl_upper_rate",
         "smoothing_window",
         "w_volume_fraction",
         "w_grain_size_um",
@@ -181,6 +199,7 @@ class CorrectionApp:
         self.curve: pd.DataFrame | None = None
         self.result: CorrectionResult | None = None
         self.shpb_table: pd.DataFrame | None = None
+        self.advanced_constitutive_table: pd.DataFrame | None = None
         self.values = self._initial_values()
         self.plot_selections: dict[str, StringVar] = {}
         self.auto_preview = BooleanVar(value=True)
@@ -203,6 +222,19 @@ class CorrectionApp:
             "offset_strain": StringVar(value="0.002"),
             "yield_offset_percent": StringVar(value="0.2"),
             "flow_fit_end": StringVar(value="peak"),
+            "advanced_constitutive_file": StringVar(),
+            "advanced_constitutive_model": StringVar(value="Johnson-Cook"),
+            "advanced_constitutive_strain_column": StringVar(value="plastic_strain"),
+            "advanced_constitutive_stress_column": StringVar(value="flow_stress_MPa"),
+            "advanced_constitutive_rate_column": StringVar(value="strain_rate_s-1"),
+            "advanced_constitutive_temperature_column": StringVar(
+                value="temperature_K"
+            ),
+            "advanced_constitutive_condition_column": StringVar(value="condition"),
+            "advanced_constitutive_reference_rate": StringVar(value="0.001"),
+            "advanced_constitutive_reference_temperature": StringVar(value="293.15"),
+            "advanced_constitutive_melting_temperature": StringVar(value="3695"),
+            "advanced_constitutive_khl_upper_rate": StringVar(value="1000000"),
             "smoothing_window": StringVar(value="51"),
             "w_volume_fraction": StringVar(value="0.90"),
             "w_grain_size_um": StringVar(value="30"),
@@ -264,6 +296,7 @@ class CorrectionApp:
         self.analyze_tab = ttk.Frame(self.notebook, padding=8)
         self.corrected_analysis_tab = ttk.Frame(self.notebook, padding=8)
         self.constitutive_tab = ttk.Frame(self.notebook, padding=8)
+        self.advanced_constitutive_tab = ttk.Frame(self.notebook, padding=8)
         self.work_hardening_tab = ttk.Frame(self.notebook, padding=8)
         self.microstructure_tab = ttk.Frame(self.notebook, padding=8)
         self.dislocation_tab = ttk.Frame(self.notebook, padding=8)
@@ -276,20 +309,24 @@ class CorrectionApp:
         self.notebook.add(self.analyze_tab, text="3  Correct & review")
         self.notebook.add(self.corrected_analysis_tab, text="4  Macroscopic response")
         self.notebook.add(self.constitutive_tab, text="5  Constitutive assessment")
-        self.notebook.add(self.work_hardening_tab, text="6  Work hardening")
         self.notebook.add(
-            self.microstructure_tab, text="7  Microstructure & Hall-Petch"
+            self.advanced_constitutive_tab, text="6  Rate-temperature models"
         )
-        self.notebook.add(self.dislocation_tab, text="8  Dislocation density")
-        self.notebook.add(self.micromechanical_tab, text="9  WHA two-phase model")
-        self.notebook.add(self.advanced_wha_tab, text="10  Advanced WHA models")
-        self.notebook.add(self.shpb_tab, text="11  High strain rate / SHPB")
-        self.notebook.add(self.export_tab, text="12  Export")
+        self.notebook.add(self.work_hardening_tab, text="7  Work hardening")
+        self.notebook.add(
+            self.microstructure_tab, text="8  Microstructure & Hall-Petch"
+        )
+        self.notebook.add(self.dislocation_tab, text="9  Dislocation density")
+        self.notebook.add(self.micromechanical_tab, text="10  WHA two-phase model")
+        self.notebook.add(self.advanced_wha_tab, text="11  Advanced WHA models")
+        self.notebook.add(self.shpb_tab, text="12  High strain rate / SHPB")
+        self.notebook.add(self.export_tab, text="13  Export")
         self._build_import_tab()
         self._build_setup_tab()
         self._build_analyze_tab()
         self._build_corrected_analysis_tab()
         self._build_constitutive_tab()
+        self._build_advanced_constitutive_tab()
         self._build_work_hardening_tab()
         self._build_microstructure_tab()
         self._build_dislocation_tab()
@@ -546,6 +583,131 @@ class CorrectionApp:
         self.model_table.column("rmse", width=90, anchor="e")
         self.model_table.column("parameters", width=430)
         self.model_table.grid(row=0, column=0, sticky="nsew")
+
+    def _build_advanced_constitutive_tab(self) -> None:
+        """Build the multi-rate and multi-temperature constitutive workflow."""
+
+        tab = self.advanced_constitutive_tab
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(3, weight=1)
+        source = ttk.LabelFrame(tab, text="Multi-condition flow dataset", padding=7)
+        source.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        source.columnconfigure(1, weight=1)
+        ttk.Label(source, text="File").grid(row=0, column=0, sticky="w")
+        ttk.Entry(source, textvariable=self.values["advanced_constitutive_file"]).grid(
+            row=0, column=1, sticky="ew", padx=5
+        )
+        ttk.Button(
+            source,
+            text="Browse…",
+            command=self._browse_advanced_constitutive_file,
+        ).grid(row=0, column=2)
+        for index, (label, name) in enumerate(
+            (
+                ("Plastic strain", "advanced_constitutive_strain_column"),
+                ("Flow stress", "advanced_constitutive_stress_column"),
+                ("Strain rate", "advanced_constitutive_rate_column"),
+                ("Temperature", "advanced_constitutive_temperature_column"),
+                ("Condition (optional)", "advanced_constitutive_condition_column"),
+            )
+        ):
+            ttk.Label(source, text=label).grid(
+                row=1, column=2 * index, sticky="w", pady=3
+            )
+            ttk.Entry(source, textvariable=self.values[name], width=18).grid(
+                row=1, column=2 * index + 1, padx=(3, 8), pady=3
+            )
+        references = ttk.LabelFrame(tab, text="Reference conditions", padding=7)
+        references.grid(row=1, column=0, sticky="ew", pady=(0, 5))
+        for index, (label, name) in enumerate(
+            (
+                ("Reference rate (s⁻¹)", "advanced_constitutive_reference_rate"),
+                (
+                    "Reference temperature (K)",
+                    "advanced_constitutive_reference_temperature",
+                ),
+                (
+                    "Melting temperature (K)",
+                    "advanced_constitutive_melting_temperature",
+                ),
+                ("KHL upper rate (s⁻¹)", "advanced_constitutive_khl_upper_rate"),
+            )
+        ):
+            ttk.Label(references, text=label).grid(row=0, column=2 * index, sticky="w")
+            ttk.Entry(references, textvariable=self.values[name], width=12).grid(
+                row=0, column=2 * index + 1, padx=(3, 12)
+            )
+        actions = ttk.Frame(tab)
+        actions.grid(row=2, column=0, sticky="ew", pady=(0, 5))
+        ttk.Button(
+            actions,
+            text="Fit all models",
+            command=self._fit_advanced_constitutive,
+        ).pack(side="left")
+        self.plot_selections["advanced_constitutive"] = self.values[
+            "advanced_constitutive_model"
+        ]
+        picker = ttk.Combobox(
+            actions,
+            textvariable=self.values["advanced_constitutive_model"],
+            values=list(MODEL_LABELS.values()),
+            state="readonly",
+            width=27,
+        )
+        picker.pack(side="left", padx=(10, 4))
+        picker.bind("<<ComboboxSelected>>", self._advanced_constitutive_view_changed)
+        ttk.Button(
+            actions,
+            text="Export selected data…",
+            command=lambda: self._export_individual_data("advanced_constitutive"),
+        ).pack(side="left", padx=3)
+        ttk.Button(
+            actions,
+            text="Export selected IEEE…",
+            command=lambda: self._export_individual_ieee("advanced_constitutive"),
+        ).pack(side="left", padx=3)
+        self.advanced_constitutive_badge = StringVar(
+            value="Load ≥2 rates and ≥2 temperatures"
+        )
+        ttk.Label(actions, textvariable=self.advanced_constitutive_badge).pack(
+            side="right", padx=8
+        )
+        content = ttk.PanedWindow(tab, orient="vertical")
+        content.grid(row=3, column=0, sticky="nsew")
+        plot_frame, table_frame = ttk.Frame(content), ttk.Frame(content)
+        content.add(plot_frame, weight=4)
+        content.add(table_frame, weight=1)
+        plot_frame.columnconfigure(0, weight=1)
+        plot_frame.rowconfigure(0, weight=1)
+        self.advanced_constitutive_figure = Figure(
+            figsize=(10, 5), dpi=100, constrained_layout=True
+        )
+        self.advanced_constitutive_ax = self.advanced_constitutive_figure.add_subplot(
+            111
+        )
+        self.advanced_constitutive_canvas = FigureCanvasTkAgg(
+            self.advanced_constitutive_figure, master=plot_frame
+        )
+        self.advanced_constitutive_canvas.get_tk_widget().grid(
+            row=0, column=0, sticky="nsew"
+        )
+        toolbar_frame = ttk.Frame(plot_frame)
+        toolbar_frame.grid(row=1, column=0, sticky="ew")
+        toolbar = NavigationToolbar2Tk(
+            self.advanced_constitutive_canvas,
+            toolbar_frame,
+            pack_toolbar=False,
+        )
+        toolbar.update()
+        toolbar.pack(side="left")
+        self.advanced_constitutive_summary = ttk.Treeview(
+            table_frame, columns=("value",), show="tree headings", height=7
+        )
+        self.advanced_constitutive_summary.heading("#0", text="Fit metric")
+        self.advanced_constitutive_summary.heading("value", text="Value")
+        self.advanced_constitutive_summary.column("#0", width=420)
+        self.advanced_constitutive_summary.column("value", width=650)
+        self.advanced_constitutive_summary.pack(fill="both", expand=True)
 
     def _build_work_hardening_tab(self) -> None:
         tab = self.work_hardening_tab
@@ -1181,6 +1343,22 @@ class CorrectionApp:
             ),
         )
 
+    def _advanced_constitutive_config(self) -> AdvancedConstitutiveConfig:
+        return AdvancedConstitutiveConfig(
+            reference_strain_rate_s=float(
+                self.values["advanced_constitutive_reference_rate"].get()
+            ),
+            reference_temperature_k=float(
+                self.values["advanced_constitutive_reference_temperature"].get()
+            ),
+            melting_temperature_k=float(
+                self.values["advanced_constitutive_melting_temperature"].get()
+            ),
+            khl_upper_rate_s=float(
+                self.values["advanced_constitutive_khl_upper_rate"].get()
+            ),
+        )
+
     def _shpb_config(self) -> SHPBConfig:
         return SHPBConfig(
             bar_modulus_gpa=float(self.values["shpb_bar_modulus_gpa"].get()),
@@ -1513,6 +1691,125 @@ class CorrectionApp:
         self._fill_summary_table(self.advanced_wha_summary, summary)
         self.status.set("Advanced WHA sensitivity views recalculated.")
 
+    def _browse_advanced_constitutive_file(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Choose multi-condition flow dataset",
+            filetypes=[
+                ("Data files", "*.csv *.tsv *.txt *.dat *.xlsx *.xls"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not path:
+            return
+        try:
+            self.advanced_constitutive_table = read_data_table(path)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Dataset could not be loaded", str(exc))
+            return
+        self.values["advanced_constitutive_file"].set(path)
+        columns = {
+            str(name).casefold(): str(name)
+            for name in self.advanced_constitutive_table.columns
+        }
+        for key, candidates in {
+            "advanced_constitutive_strain_column": (
+                "plastic_strain",
+                "true_plastic_strain",
+            ),
+            "advanced_constitutive_stress_column": (
+                "flow_stress_mpa",
+                "true_stress_mpa",
+            ),
+            "advanced_constitutive_rate_column": ("strain_rate_s-1", "strain_rate"),
+            "advanced_constitutive_temperature_column": (
+                "temperature_k",
+                "temperature",
+            ),
+            "advanced_constitutive_condition_column": (
+                "condition",
+                "test_id",
+                "specimen",
+            ),
+        }.items():
+            match = next(
+                (columns[name] for name in candidates if name in columns), None
+            )
+            if match:
+                self.values[key].set(match)
+        self.advanced_constitutive_badge.set(
+            f"Loaded {len(self.advanced_constitutive_table):,} rows"
+        )
+
+    def _ensure_result_container(self) -> CorrectionResult:
+        if self.result is None:
+            self.result = CorrectionResult(
+                config=CorrectionConfig(
+                    "compression", 310_000.0, "strain", 0.0005, 0.0025
+                ),
+                audit=pd.DataFrame(),
+                corrected_curve=pd.DataFrame(),
+                summary={},
+            )
+        return self.result
+
+    def _draw_advanced_constitutive(self) -> None:
+        if self.result is None:
+            return
+        model = self._selected_plot_id("advanced_constitutive").split(".", 1)[1]
+        draw_advanced_constitutive_view(
+            self.advanced_constitutive_ax, self.result, model=model
+        )
+        self.advanced_constitutive_canvas.draw_idle()
+        summary = self.result.summary.get("advanced_constitutive_analysis", {})
+        models = summary.get("models", {}) if isinstance(summary, dict) else {}
+        selected = models.get(model, {}) if isinstance(models, dict) else {}
+        self._fill_summary_table(self.advanced_constitutive_summary, selected)
+
+    def _advanced_constitutive_view_changed(self, _event=None) -> None:
+        if self.result is not None and self.result.advanced_constitutive:
+            self._draw_advanced_constitutive()
+
+    def _fit_advanced_constitutive(self) -> None:
+        path = self.values["advanced_constitutive_file"].get().strip()
+        if not path:
+            messagebox.showwarning(
+                "No multi-condition dataset",
+                "Choose a dataset containing plastic strain, flow stress, strain "
+                "rate, and temperature.",
+            )
+            return
+        try:
+            self.advanced_constitutive_table = read_data_table(path)
+            data = prepare_multicondition_data(
+                self.advanced_constitutive_table,
+                strain_column=self.values["advanced_constitutive_strain_column"].get(),
+                stress_column=self.values["advanced_constitutive_stress_column"].get(),
+                strain_rate_column=self.values[
+                    "advanced_constitutive_rate_column"
+                ].get(),
+                temperature_column=self.values[
+                    "advanced_constitutive_temperature_column"
+                ].get(),
+                condition_column=self.values[
+                    "advanced_constitutive_condition_column"
+                ].get(),
+            )
+            outputs, summary = fit_advanced_constitutive(
+                data, self._advanced_constitutive_config()
+            )
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Constitutive fitting failed", str(exc))
+            return
+        result = self._ensure_result_container()
+        result.advanced_constitutive = outputs
+        result.summary["advanced_constitutive_analysis"] = summary
+        self._draw_advanced_constitutive()
+        self.advanced_constitutive_badge.set(
+            f"Best AIC: {summary['best_model_by_AIC']} · "
+            f"{summary['condition_count']} conditions"
+        )
+        self.status.set("Multi-condition constitutive models fitted successfully.")
+
     def _browse_shpb_file(self) -> None:
         path = filedialog.askopenfilename(
             title="Choose SHPB pulse file",
@@ -1558,17 +1855,9 @@ class CorrectionApp:
         except (OSError, ValueError) as exc:
             messagebox.showerror("SHPB analysis failed", str(exc))
             return
-        if self.result is None:
-            self.result = CorrectionResult(
-                config=CorrectionConfig(
-                    "compression", 310_000.0, "strain", 0.0005, 0.0025
-                ),
-                audit=pd.DataFrame(),
-                corrected_curve=pd.DataFrame(),
-                summary={},
-            )
-        self.result.high_rate = high_rate
-        self.result.summary["shpb_analysis"] = summary
+        result = self._ensure_result_container()
+        result.high_rate = high_rate
+        result.summary["shpb_analysis"] = summary
         self._draw_shpb()
         self._fill_summary_table(self.shpb_summary, summary)
         self.status.set(

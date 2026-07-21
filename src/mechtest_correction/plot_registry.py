@@ -9,9 +9,11 @@ from functools import partial
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from .advanced_constitutive import MODEL_LABELS
 from .analysis import flow_fit_data_frame
 from .models import CorrectionResult
 from .plotting import (
+    draw_advanced_constitutive_view,
     draw_advanced_wha_view,
     draw_constitutive_assessment,
     draw_dislocation_density,
@@ -107,6 +109,10 @@ def _advanced_data(result: CorrectionResult, view: str) -> pd.DataFrame:
 
 def _shpb_data(result: CorrectionResult, view: str) -> pd.DataFrame:
     return (result.high_rate or {}).get(view, pd.DataFrame()).copy()
+
+
+def _advanced_constitutive_data(result: CorrectionResult, model: str) -> pd.DataFrame:
+    return (result.advanced_constitutive or {}).get(model, pd.DataFrame()).copy()
 
 
 PLOT_SPECS = (
@@ -339,6 +345,19 @@ PLOT_SPECS = (
         partial(_shpb_data, view="response"),
         r"Time, $t$ (µs)",
         r"Strain rate, $\dot{\varepsilon}$ ($\mathrm{s}^{-1}$)",
+    ),
+    *(
+        PlotSpec(
+            f"advanced_constitutive.{model}",
+            "advanced_constitutive",
+            label,
+            f"{model}_fit_ieee",
+            partial(draw_advanced_constitutive_view, model=model),
+            partial(_advanced_constitutive_data, model=model),
+            r"True plastic strain, $\varepsilon_p$ (\%)",
+            r"True flow stress, $\sigma$ (MPa)",
+        )
+        for model, label in MODEL_LABELS.items()
     ),
 )
 
