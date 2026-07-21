@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from mechtest_correction.gui import config_from_values, prepare_curve
+from mechtest_correction.gui import WORKSPACE_GROUPS, config_from_values, prepare_curve
 
 
 def test_gui_values_create_valid_config():
@@ -56,3 +56,15 @@ def test_gui_derives_curve_from_load_extension():
         },
     )
     assert curve.iloc[-1].tolist() == pytest.approx([0.04, 20_000.0])
+
+
+def test_gui_navigation_groups_related_panels():
+    assert tuple(WORKSPACE_GROUPS) == (
+        "Project & correction",
+        "Mechanical response",
+        "WHA science",
+        "High-rate testing",
+        "Export",
+    )
+    assert "Rate-temperature models" in WORKSPACE_GROUPS["Mechanical response"]
+    assert "Advanced WHA models" in WORKSPACE_GROUPS["WHA science"]

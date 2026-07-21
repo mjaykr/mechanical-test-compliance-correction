@@ -102,42 +102,22 @@ the same audit CSV, corrected curve, JSON summary, and figures as the command-
 line tool. It proposes column mappings automatically and lets you select a
 different pair when the machine export contains additional channels.
 
-The interactive workflow is arranged in thirteen tabs:
+The interface groups the analysis into five workspaces:
 
-1. **Import** previews up to 100 rows, identifies numeric columns, proposes a
-   strain/stress or extension/load mapping, and lets you correct that mapping.
-2. **Test setup** defines tension or compression, input units and signs, or the
-   gauge length and initial area needed to convert load–extension data.
-3. **Correct & review** embeds the raw and corrected curves. Drag horizontally
-   over the raw graph to select the elastic fitting interval, then inspect the
-   apparent and recovered moduli, fit R-squared, toe strain, and compliance.
-4. **Macroscopic response** plots corrected engineering and true responses,
-   identifies proof yield, and tabulates tensile or compression properties.
-5. **Constitutive assessment** compares post-yield flow-law fits and parameters.
-6. **Rate-temperature models** imports a tidy multi-condition flow dataset and
-   fits Johnson-Cook, BCC Zerilli-Armstrong, Khan-Huang-Liang, extended Voce,
-   and strain-compensated modified Arrhenius models from one dropdown panel.
-7. **Work hardening** plots Kocks–Mecking `theta(sigma)` and `theta(epsilon_p)`,
-   with derivative smoothing and data-driven stage segmentation.
-8. **Microstructure & Hall-Petch** projects separate W-grain and matrix-grain
-   strengthening contributions from user-supplied microstructural parameters.
-9. **Dislocation density** converts the post-yield curve to an effective Taylor
-   density and fits a Kocks-Mecking storage-recovery evolution law.
-10. **WHA two-phase model** compares the measured response with bilinear
-   Voigt, Reuss, and Hill load-sharing estimates using separate BCC W and FCC
-   matrix properties.
-11. **Advanced WHA models** is one dropdown-driven panel for rule-of-mixtures
-    bounds; iso-strain and iso-stress response; Mori-Tanaka/Eshelby elasticity;
-    phase load partition; interface strength, W-W contiguity, and porosity
-    sensitivities; separate BCC-W/FCC-matrix flow laws; and two-phase
-    dislocation-density scenarios. Every selected view has its own data and
-    IEEE export buttons.
-12. **High strain rate / SHPB** imports a separate pulse file, reduces incident,
-    reflected, and transmitted bar-strain histories using the 1-D SHPB equations,
-    and plots pulse histories, dynamic compression response, strain rate, and
-    force-equilibrium mismatch.
-13. **Export** saves the complete audit outputs and an `analysis_settings.json`
-   file. Settings can also be saved and reloaded independently.
+1. **Project & correction** contains Import, Test setup, and Correct & review.
+   This is the guided path from a raw machine file to a validated corrected curve.
+2. **Mechanical response** contains Macroscopic response, Constitutive
+   assessment, Rate-temperature models, and Work hardening.
+3. **WHA science** contains Microstructure & Hall-Petch, Dislocation density,
+   WHA two-phase model, and Advanced WHA models.
+4. **High-rate testing** contains the independent SHPB pulse-import, reduction,
+   strain-rate, dynamic-response, and force-equilibrium workflow.
+5. **Export** contains complete result export plus settings save/reload.
+
+A persistent header explains the selected workspace. Quick-navigation buttons
+and shortcuts provide direct access: `Ctrl+O` opens data, `Ctrl+R` goes to and
+updates correction review, `Ctrl+E` opens Export, `Ctrl+S` saves settings, and
+`F1` displays the navigation guide.
 
 The graph selection is an analysis aid: use a visibly linear, pre-yield region
 after initial platen seating or grip take-up. The software still treats the

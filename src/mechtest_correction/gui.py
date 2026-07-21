@@ -54,6 +54,43 @@ from .wha_models import (
 )
 from .work_hardening import analyze_work_hardening
 
+WORKSPACE_GROUPS = {
+    "Project & correction": ("Import", "Test setup", "Correct & review"),
+    "Mechanical response": (
+        "Macroscopic response",
+        "Constitutive assessment",
+        "Rate-temperature models",
+        "Work hardening",
+    ),
+    "WHA science": (
+        "Microstructure & Hall-Petch",
+        "Dislocation density",
+        "WHA two-phase model",
+        "Advanced WHA models",
+    ),
+    "High-rate testing": ("Split-Hopkinson pressure bar",),
+    "Export": ("Results and settings",),
+}
+
+WORKSPACE_DESCRIPTIONS = {
+    "Project & correction": (
+        "Import raw data, define the test, and validate compliance correction."
+    ),
+    "Mechanical response": (
+        "Evaluate corrected properties, flow laws, rate-temperature response, "
+        "and hardening."
+    ),
+    "WHA science": (
+        "Connect macroscopic response to WHA microstructure and two-phase mechanisms."
+    ),
+    "High-rate testing": (
+        "Reduce and validate Split-Hopkinson pressure-bar compression pulses."
+    ),
+    "Export": (
+        "Save audit data, model parameters, settings, and publication-ready figures."
+    ),
+}
+
 
 def config_from_values(values: Mapping[str, str]) -> CorrectionConfig:
     """Build and validate a correction configuration from GUI text fields."""
@@ -289,38 +326,98 @@ class CorrectionApp:
     def _build(self) -> None:
         shell = ttk.Frame(self.root, padding=10)
         shell.pack(fill="both", expand=True)
+        style = ttk.Style(self.root)
+        style.configure("AppTitle.TLabel", font=("Segoe UI", 16, "bold"))
+        style.configure("AppSubtitle.TLabel", foreground="#4b5563")
+        style.configure("Status.TLabel", padding=(7, 4))
+        style.configure("TNotebook.Tab", padding=(12, 6))
+
+        header = ttk.Frame(shell)
+        header.pack(fill="x", pady=(0, 8))
+        title_block = ttk.Frame(header)
+        title_block.pack(side="left", fill="x", expand=True)
+        ttk.Label(
+            title_block,
+            text="Mechanical Test Compliance Correction",
+            style="AppTitle.TLabel",
+        ).pack(anchor="w")
+        self.workspace_description = StringVar(
+            value=WORKSPACE_DESCRIPTIONS["Project & correction"]
+        )
+        ttk.Label(
+            title_block,
+            textvariable=self.workspace_description,
+            style="AppSubtitle.TLabel",
+        ).pack(anchor="w", pady=(1, 0))
+        quick = ttk.LabelFrame(header, text="Quick navigation", padding=(6, 4))
+        quick.pack(side="right")
+        ttk.Button(
+            quick,
+            text="Open data  Ctrl+O",
+            command=self._quick_open_data,
+        ).pack(side="left", padx=2)
+        ttk.Button(
+            quick,
+            text="Review correction  Ctrl+R",
+            command=self._quick_review,
+        ).pack(side="left", padx=2)
+        ttk.Button(
+            quick,
+            text="Export  Ctrl+E",
+            command=self._quick_export,
+        ).pack(side="left", padx=2)
+
         self.notebook = ttk.Notebook(shell)
         self.notebook.pack(fill="both", expand=True)
-        self.import_tab = ttk.Frame(self.notebook, padding=10)
-        self.setup_tab = ttk.Frame(self.notebook, padding=10)
-        self.analyze_tab = ttk.Frame(self.notebook, padding=8)
-        self.corrected_analysis_tab = ttk.Frame(self.notebook, padding=8)
-        self.constitutive_tab = ttk.Frame(self.notebook, padding=8)
-        self.advanced_constitutive_tab = ttk.Frame(self.notebook, padding=8)
-        self.work_hardening_tab = ttk.Frame(self.notebook, padding=8)
-        self.microstructure_tab = ttk.Frame(self.notebook, padding=8)
-        self.dislocation_tab = ttk.Frame(self.notebook, padding=8)
-        self.micromechanical_tab = ttk.Frame(self.notebook, padding=8)
-        self.advanced_wha_tab = ttk.Frame(self.notebook, padding=8)
+        self.project_group = ttk.Frame(self.notebook, padding=4)
+        self.response_group = ttk.Frame(self.notebook, padding=4)
+        self.wha_group = ttk.Frame(self.notebook, padding=4)
         self.shpb_tab = ttk.Frame(self.notebook, padding=8)
         self.export_tab = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(self.import_tab, text="1  Import")
-        self.notebook.add(self.setup_tab, text="2  Test setup")
-        self.notebook.add(self.analyze_tab, text="3  Correct & review")
-        self.notebook.add(self.corrected_analysis_tab, text="4  Macroscopic response")
-        self.notebook.add(self.constitutive_tab, text="5  Constitutive assessment")
-        self.notebook.add(
-            self.advanced_constitutive_tab, text="6  Rate-temperature models"
+        self.notebook.add(self.project_group, text="1  Project & correction")
+        self.notebook.add(self.response_group, text="2  Mechanical response")
+        self.notebook.add(self.wha_group, text="3  WHA science")
+        self.notebook.add(self.shpb_tab, text="4  High-rate testing")
+        self.notebook.add(self.export_tab, text="5  Export")
+
+        self.project_notebook = ttk.Notebook(self.project_group)
+        self.project_notebook.pack(fill="both", expand=True)
+        self.import_tab = ttk.Frame(self.project_notebook, padding=10)
+        self.setup_tab = ttk.Frame(self.project_notebook, padding=10)
+        self.analyze_tab = ttk.Frame(self.project_notebook, padding=8)
+        self.project_notebook.add(self.import_tab, text="1.1  Import")
+        self.project_notebook.add(self.setup_tab, text="1.2  Test setup")
+        self.project_notebook.add(self.analyze_tab, text="1.3  Correct & review")
+
+        self.response_notebook = ttk.Notebook(self.response_group)
+        self.response_notebook.pack(fill="both", expand=True)
+        self.corrected_analysis_tab = ttk.Frame(self.response_notebook, padding=8)
+        self.constitutive_tab = ttk.Frame(self.response_notebook, padding=8)
+        self.advanced_constitutive_tab = ttk.Frame(self.response_notebook, padding=8)
+        self.work_hardening_tab = ttk.Frame(self.response_notebook, padding=8)
+        self.response_notebook.add(
+            self.corrected_analysis_tab, text="2.1  Macroscopic response"
         )
-        self.notebook.add(self.work_hardening_tab, text="7  Work hardening")
-        self.notebook.add(
-            self.microstructure_tab, text="8  Microstructure & Hall-Petch"
+        self.response_notebook.add(
+            self.constitutive_tab, text="2.2  Constitutive assessment"
         )
-        self.notebook.add(self.dislocation_tab, text="9  Dislocation density")
-        self.notebook.add(self.micromechanical_tab, text="10  WHA two-phase model")
-        self.notebook.add(self.advanced_wha_tab, text="11  Advanced WHA models")
-        self.notebook.add(self.shpb_tab, text="12  High strain rate / SHPB")
-        self.notebook.add(self.export_tab, text="13  Export")
+        self.response_notebook.add(
+            self.advanced_constitutive_tab, text="2.3  Rate-temperature models"
+        )
+        self.response_notebook.add(self.work_hardening_tab, text="2.4  Work hardening")
+
+        self.wha_notebook = ttk.Notebook(self.wha_group)
+        self.wha_notebook.pack(fill="both", expand=True)
+        self.microstructure_tab = ttk.Frame(self.wha_notebook, padding=8)
+        self.dislocation_tab = ttk.Frame(self.wha_notebook, padding=8)
+        self.micromechanical_tab = ttk.Frame(self.wha_notebook, padding=8)
+        self.advanced_wha_tab = ttk.Frame(self.wha_notebook, padding=8)
+        self.wha_notebook.add(
+            self.microstructure_tab, text="3.1  Microstructure & Hall-Petch"
+        )
+        self.wha_notebook.add(self.dislocation_tab, text="3.2  Dislocation density")
+        self.wha_notebook.add(self.micromechanical_tab, text="3.3  WHA two-phase model")
+        self.wha_notebook.add(self.advanced_wha_tab, text="3.4  Advanced WHA models")
         self._build_import_tab()
         self._build_setup_tab()
         self._build_analyze_tab()
@@ -334,7 +431,68 @@ class CorrectionApp:
         self._build_advanced_wha_tab()
         self._build_shpb_tab()
         self._build_export_tab()
-        ttk.Label(shell, textvariable=self.status).pack(fill="x", pady=(7, 0))
+        self.notebook.bind("<<NotebookTabChanged>>", self._workspace_changed)
+        self.root.bind("<Control-o>", self._quick_open_data)
+        self.root.bind("<Control-r>", self._quick_review)
+        self.root.bind("<Control-e>", self._quick_export)
+        self.root.bind("<Control-s>", self._quick_save_settings)
+        self.root.bind("<F1>", self._show_navigation_help)
+        status_bar = ttk.Frame(shell, relief="sunken", borderwidth=1)
+        status_bar.pack(fill="x", pady=(7, 0))
+        ttk.Label(status_bar, textvariable=self.status, style="Status.TLabel").pack(
+            side="left", fill="x", expand=True
+        )
+        ttk.Label(
+            status_bar,
+            text="Ctrl+O Open  ·  Ctrl+R Review  ·  Ctrl+S Save settings  ·  F1 Help",
+            style="AppSubtitle.TLabel",
+        ).pack(side="right", padx=7)
+
+    def _workspace_changed(self, _event=None) -> None:
+        index = self.notebook.index("current")
+        name = tuple(WORKSPACE_GROUPS)[index]
+        self.workspace_description.set(WORKSPACE_DESCRIPTIONS[name])
+
+    def _quick_open_data(self, _event=None):
+        self.notebook.select(self.project_group)
+        self.project_notebook.select(self.import_tab)
+        self._choose_input()
+        return "break"
+
+    def _quick_review(self, _event=None):
+        self.notebook.select(self.project_group)
+        self.project_notebook.select(self.analyze_tab)
+        if self.table is None:
+            self.status.set("Import a test-data file before reviewing correction.")
+        else:
+            self._preview_result()
+        return "break"
+
+    def _quick_export(self, _event=None):
+        self.notebook.select(self.export_tab)
+        self.status.set("Review the output folder and export options.")
+        return "break"
+
+    def _quick_save_settings(self, _event=None):
+        self._save_settings()
+        return "break"
+
+    def _show_navigation_help(self, _event=None):
+        messagebox.showinfo(
+            "Navigation guide",
+            "Project & correction\n"
+            "  Import data, configure the test, and validate compliance correction.\n\n"
+            "Mechanical response\n"
+            "  Corrected properties, flow laws, multi-condition models, "
+            "and hardening.\n\n"
+            "WHA science\n"
+            "  Hall-Petch, dislocation density, two-phase, and advanced WHA models.\n\n"
+            "High-rate testing\n"
+            "  Separate SHPB pulse import, reduction, and equilibrium checks.\n\n"
+            "Export\n"
+            "  Save results, settings, audit data, and figures.",
+        )
+        return "break"
 
     def _build_import_tab(self) -> None:
         tab = self.import_tab
