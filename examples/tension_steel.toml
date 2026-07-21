@@ -1,0 +1,23 @@
+[test]
+mode = "tension"
+strain_column = "engineering_strain"
+stress_column = "engineering_stress_MPa"
+strain_unit = "fraction"
+stress_unit = "MPa"
+strain_sign = "auto"
+stress_sign = "auto"
+
+[correction]
+# Example only; replace with a justified modulus for the tested material.
+target_modulus_gpa = 210.0
+fit_axis = "stress"
+fit_min = 50.0
+fit_max = 250.0
+offset_strain = 0.002
+exclude_before_fit = true
+monotonic = true
+add_origin = true
+
+[output]
+output_dir = "results/tension_steel"
+

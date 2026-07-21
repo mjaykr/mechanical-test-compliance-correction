@@ -1,0 +1,68 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mechtest-compliance-correction"
+version = "0.1.0"
+description = "Auditable modulus-targeted compliance correction for tensile and compression stress-strain data"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [
+  { name = "Mechanical Test Compliance Correction contributors" },
+]
+keywords = [
+  "mechanical testing",
+  "stress strain",
+  "machine compliance",
+  "tensile testing",
+  "compression testing",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering",
+]
+dependencies = [
+  "matplotlib>=3.7",
+  "numpy>=1.24",
+  "openpyxl>=3.1",
+  "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "pytest-cov>=5",
+  "ruff>=0.9",
+]
+publication = [
+  "scienceplots>=2.1",
+]
+
+[project.scripts]
+mechtest-correct = "mechtest_correction.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/mjaykr/mechanical-test-compliance-correction"
+Issues = "https://github.com/mjaykr/mechanical-test-compliance-correction/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mechtest_correction"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

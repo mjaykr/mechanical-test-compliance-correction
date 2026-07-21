@@ -1,0 +1,21 @@
+[test]
+mode = "compression"
+strain_unit = "fraction"
+stress_unit = "MPa"
+strain_sign = "auto"
+stress_sign = "auto"
+
+[correction]
+# Literature-targeted assumption for this example, not a measured modulus.
+target_modulus_gpa = 310.0
+fit_axis = "strain"
+fit_min = 0.015
+fit_max = 0.030
+offset_strain = 0.002
+exclude_before_fit = true
+monotonic = true
+add_origin = true
+
+[output]
+output_dir = "results/compression_90w7ni3fe"
+

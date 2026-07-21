@@ -1,0 +1,5 @@
+# Development and test dependencies. Install after requirements.txt.
+-r requirements.txt
+pytest>=8
+pytest-cov>=5
+ruff>=0.9
