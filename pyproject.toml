@@ -48,6 +48,7 @@ publication = [
 
 [project.scripts]
 mechtest-correct = "mechtest_correction.cli:main"
+mechtest-gui = "mechtest_correction.gui:main"
 
 [project.urls]
 Homepage = "https://github.com/mjaykr/mechanical-test-compliance-correction"

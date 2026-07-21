@@ -57,6 +57,22 @@ python -m pip install -e ".[dev]"
 
 ## Quick start
 
+### Desktop GUI
+
+After installation, start the desktop tool with:
+
+```bash
+mechtest-gui
+```
+
+Choose the raw data file and output folder, select tension or compression, and
+enter a justified target modulus plus an elastic fitting interval. The GUI saves
+the same audit CSV, corrected curve, JSON summary, and figures as the command-
+line tool. If the input file has unambiguous strain and stress columns, leave
+the optional column fields empty; otherwise enter the exact header names.
+
+### Command line
+
 Compression using a TOML configuration:
 
 ```bash

@@ -137,11 +137,24 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         sheet_name=sheet,
     )
     result = correct_curve(frame, config)
+    return write_outputs(
+        result,
+        output_dir,
+        input_file=args.input,
+        publication_style=args.publication_style,
+    )
+
+
+def write_outputs(
+    result, output_dir: Path, *, input_file: Path, publication_style: bool = False
+) -> dict[str, object]:
+    """Write standard correction artifacts and return the run summary."""
+
     output_dir.mkdir(parents=True, exist_ok=True)
     result.audit.to_csv(output_dir / "correction_audit.csv", index=False)
     result.corrected_curve.to_csv(output_dir / "corrected_curve.csv", index=False)
     summary = dict(result.summary)
-    summary["input_file"] = str(args.input.resolve())
+    summary["input_file"] = str(input_file.resolve())
     summary["correction_equation"] = (
         "epsilon_corrected = epsilon_raw - C_system * sigma - epsilon_toe"
     )
@@ -151,7 +164,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     plot_comparison(
         result,
         output_dir,
-        publication_style=args.publication_style,
+        publication_style=publication_style,
     )
     return summary
 
