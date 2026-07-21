@@ -65,8 +65,10 @@ run:
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-This creates a local `.venv` environment and installs the GUI. Start the
-application at any later time with:
+This creates a local `.venv` environment, installs the GUI, and creates a
+**Mechanical Test Compliance Correction** shortcut with an application icon on
+your Windows Desktop. Start the application at any later time using that shortcut
+or with:
 
 ```powershell
 .\start-gui.ps1
