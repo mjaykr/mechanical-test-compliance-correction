@@ -49,6 +49,27 @@ load-frame compliance test.
 
 ## Installation
 
+### Windows: one-command installer
+
+Clone or download this repository, open PowerShell in the project folder, and
+run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+This creates a local `.venv` environment and installs the GUI. Start the
+application at any later time with:
+
+```powershell
+.\start-gui.ps1
+```
+
+To install the development tools as well, use `-Dev`; use `-Launch` to open the
+GUI as soon as installation finishes.
+
+### Manual installation
+
 ```bash
 python -m venv .venv
 python -m pip install --upgrade pip
